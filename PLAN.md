@@ -35,8 +35,8 @@
   * Debounced auto-save (saves in background 400ms after user pauses typing).
   * File renaming when the first line changes.
   * Safe deletion (moves to `.trash`).
-* ⚪ **`[Planned]`** **External File Watcher:**
-  * Use `QFileSystemWatcher` to detect when notes are modified externally.
+* 🟢 **`[Completed]`** **External File Watcher:**
+  * Uses `QFileSystemWatcher` to detect when notes or folders are modified externally.
 
 ---
 
@@ -46,7 +46,7 @@
   * Sidebar toggle shortcut (`Ctrl+\`).
 * 🟢 **`[Completed]`** **Folders Sidebar (`ui/sidebar.py`):**
   * Tree view displaying "All Notes" and custom subfolders matching the filesystem.
-  * "New Folder" inline creation button.
+  * "New Folder" inline creation button and `Ctrl+Shift+N` shortcut.
 * 🟢 **`[Completed]`** **Note Cards List (`ui/note_list.py`):**
   * Custom card view (`QStyledItemDelegate`):
     * Bold note title.
@@ -60,47 +60,39 @@
 ---
 
 ### Phase 4: Obsidian-Style In-Editor Live Preview & Interactive Checkboxes (`ui/editor.py`)
-* ⚪ **`[Planned]`** **Live In-Editor Markdown Formatting:**
-  * No separate preview window or split screen: styling happens directly on the editor canvas.
-  * Headings (H1, H2, H3) automatically scale in font size and visual hierarchy.
-  * Bold, italic, blockquotes, and code blocks styled cleanly in-place.
-  * Generous document margins and clean, readable typography.
-* ⚪ **`[Planned]`** **Interactive Checkboxes:**
-  * Detect `- [ ]` and `- [x]` markdown checklist items.
-  * Render interactive, clickable checkbox icons in-place.
-  * Clicking with the mouse immediately toggles check/uncheck state, applies strikethrough styling to completed text, and saves to the markdown file.
+* 🟢 **`[Completed]`** **Live In-Editor Markdown Formatting:**
+  * Real-time `MarkdownHighlighter` scaling headers (H1: 20pt, H2: 17pt, H3: 15pt).
+  * In-place styling for bold, italic, code blocks, blockquotes, horizontal rules, tags, and links.
+* 🟢 **`[Completed]`** **Interactive Checkboxes:**
+  * Click on `- [ ]` / `- [x]` immediately toggles state with instant strikethrough visual feedback.
+  * `Ctrl+Enter` shortcut to toggle current line checkbox or convert line into a checkbox.
+  * Smart `Enter` auto-continuation for checklists and bulleted/numbered lists.
+  * `Tab` / `Shift+Tab` 2-space indentation.
 
 ---
 
 ### Phase 5: Floating Slash (`/`) Command Palette (`ui/slash_menu.py`)
-* ⚪ **`[Planned]`** **Trigger Detection:**
-  * Detect when `/` is typed at the start of a line or after whitespace.
-* ⚪ **`[Planned]`** **Floating Cursor-Aligned Popup:**
-  * Calculate exact pixel coordinates of the text cursor (`cursorRect()`).
-  * Display a lightweight, frameless floating menu directly under the cursor.
-* ⚪ **`[Planned]`** **Real-Time Search & Markdown Actions:**
-  * 🔤 **Heading 1 / 2 / 3** (`# `, `## `, `### `)
-  * ☑️ **To-do Checkbox** (`- [ ] `)
-  * 📋 **Bulleted List** (`- `)
-  * 🔢 **Numbered List** (`1. `)
-  * 💻 **Code Block** (```` ``` ````)
-  * 💬 **Quote** (`> `)
-  * ➖ **Horizontal Divider** (`---`)
-* ⚪ **`[Planned]`** **Seamless Keyboard Control:**
-  * Filter as you type (`/h1`, `/todo`, etc.).
-  * `Up` / `Down` arrows to navigate, `Enter` to insert, `Escape` to dismiss.
+* 🟢 **`[Completed]`** **Trigger Detection:**
+  * Automatically detects `/` typed at the start of a line or after whitespace.
+* 🟢 **`[Completed]`** **Floating Cursor-Aligned Popup:**
+  * Calculates `cursorRect()` and floats cleanly directly under the text cursor.
+* 🟢 **`[Completed]`** **Real-Time Search & Markdown Actions:**
+  * Filter as you type across H1, H2, H3, To-do Checkbox, Bullet list, Numbered list, Code block, Quote, and Divider.
+* 🟢 **`[Completed]`** **Seamless Keyboard Control:**
+  * `Up` / `Down` arrows to navigate, `Enter` to insert, `Escape` or clicking away to dismiss.
 
 ---
 
 ### Phase 6: Search, Polish & Shortcuts
-* ⚪ **`[Planned]`** **Instant Real-Time Search:**
-  * Search bar above note list filters notes instantaneously by title and body content.
-* ⚪ **`[Planned]`** **Productivity Keyboard Shortcuts:**
+* 🟢 **`[Completed]`** **Instant Real-Time Search:**
+  * Search bar filters notes instantaneously by both title and content.
+* 🟢 **`[Completed]`** **Productivity Keyboard Shortcuts:**
   * `Ctrl+N`: New note.
   * `Ctrl+Shift+N`: New folder.
-  * `Ctrl+\`: Toggle sidebar.
+  * `Ctrl+\`: Toggle folders sidebar.
   * `Ctrl+F`: Jump to search bar.
   * `Ctrl+D`: Delete current note.
-* ⚪ **`[Planned]`** **Linux Integration:**
-  * Standard XDG folder compliance (`~/.config/note-taker/` for settings).
-  * Native desktop launcher entry (`note-taker.desktop`).
+  * `Ctrl+Enter`: Toggle checkbox.
+* 🟢 **`[Completed]`** **Linux Integration:**
+  * Standard XDG folder compliance (`~/.config/note-taker/`).
+  * Desktop application launcher (`note-taker.desktop`).

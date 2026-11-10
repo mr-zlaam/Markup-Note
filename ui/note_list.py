@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QVBoxLayout,
@@ -38,8 +39,8 @@ class NoteCardDelegate(QStyledItemDelegate):
             painter.restore()
             return
 
-        is_selected = bool(option.state & option.StateFlag.State_Selected)
-        is_hover = bool(option.state & option.StateFlag.State_MouseOver)
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
 
         rect = option.rect.adjusted(4, 2, -4, -2)
 
@@ -115,14 +116,13 @@ class NoteListPanel(QWidget):
 
         self.search_bar = QLineEdit(parent=self)
         self.search_bar.setObjectName("SearchBar")
-        self.search_bar.setPlaceholderText("🔍  Search notes...")
+        self.search_bar.setPlaceholderText("Search notes...")
         self.search_bar.textChanged.connect(self._on_search_text_changed)
         top_bar.addWidget(self.search_bar)
 
-        self.new_note_btn = QPushButton("✏️", parent=self)
+        self.new_note_btn = QPushButton("+ Note", parent=self)
         self.new_note_btn.setObjectName("ActionBtn")
         self.new_note_btn.setToolTip("Create new note (Ctrl+N)")
-        self.new_note_btn.setFixedSize(30, 30)
         self.new_note_btn.clicked.connect(self.create_note_requested.emit)
         top_bar.addWidget(self.new_note_btn)
 

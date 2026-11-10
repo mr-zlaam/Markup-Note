@@ -86,7 +86,7 @@ QLineEdit#SearchBar:focus {
 }
 
 /* Editor Styling */
-QPlainTextEdit#MarkdownEditor {
+QTextEdit#MarkdownEditor, QPlainTextEdit#MarkdownEditor {
     background-color: #1e1e1e;
     color: #e6e6e6;
     border: none;

@@ -3,12 +3,13 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QFileSystemWatcher, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QSplitter, QWidget
+from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
 from core.note import Note
 from core.storage import StorageManager
+from ui.dialogs import ModernConfirmDialog
 from ui.editor import EditorPanel
 from ui.note_list import NoteListPanel
 from ui.sidebar import FolderSidebar
@@ -26,6 +27,10 @@ class MainWindow(QMainWindow):
         self._current_folder: Optional[Path] = None
         self._current_note: Optional[Note] = None
         self._all_current_notes: List[Note] = []
+
+        # File system watcher for external edits
+        self.watcher = QFileSystemWatcher(parent=self)
+        self.watcher.directoryChanged.connect(self._on_external_change)
 
         self._init_ui()
         self._setup_shortcuts()
@@ -49,6 +54,7 @@ class MainWindow(QMainWindow):
         # 3. Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
         self.editor.content_saved.connect(self._on_content_saved)
+        self.editor.create_note_with_content.connect(self._on_create_note_with_content)
         self.editor.delete_requested.connect(self._on_delete_note)
 
         # Set initial splitter proportions (180px, 260px, remaining)
@@ -61,6 +67,10 @@ class MainWindow(QMainWindow):
         new_note_sc = QShortcut(QKeySequence("Ctrl+N"), self)
         new_note_sc.activated.connect(self._on_create_note)
 
+        # New Folder (Ctrl+Shift+N)
+        new_folder_sc = QShortcut(QKeySequence("Ctrl+Shift+N"), self)
+        new_folder_sc.activated.connect(self.sidebar._on_add_folder_clicked)
+
         # Toggle Folders Sidebar (Ctrl+\)
         toggle_sidebar_sc = QShortcut(QKeySequence("Ctrl+\\"), self)
         toggle_sidebar_sc.activated.connect(self._toggle_sidebar)
@@ -69,11 +79,38 @@ class MainWindow(QMainWindow):
         search_sc = QShortcut(QKeySequence("Ctrl+F"), self)
         search_sc.activated.connect(self.note_list.search_bar.setFocus)
 
+        # Delete Note (Ctrl+D)
+        delete_sc = QShortcut(QKeySequence("Ctrl+D"), self)
+        delete_sc.activated.connect(self._on_delete_note)
+
     def _load_initial_data(self) -> None:
         """Load folders and notes on launch."""
         folders = self.storage.get_folders()
         self.sidebar.set_folders(folders)
+        self._update_watcher_paths()
         self._refresh_notes()
+
+        # If no notes exist on launch, auto-create one so user can type immediately
+        if not self._all_current_notes:
+            self._on_create_note()
+        elif self._current_note is not None:
+            self.editor.editor.setFocus()
+
+    def _update_watcher_paths(self) -> None:
+        """Update watched directories for external modifications."""
+        dirs_to_watch = [str(self.storage.root_dir)]
+        for f in self.storage.get_folders():
+            dirs_to_watch.append(str(f))
+        current_watched = self.watcher.directories()
+        if current_watched:
+            self.watcher.removePaths(current_watched)
+        if dirs_to_watch:
+            self.watcher.addPaths(dirs_to_watch)
+
+    def _on_external_change(self, path: str) -> None:
+        """Handle external changes to notes directory."""
+        current_path = str(self._current_note.path) if self._current_note else None
+        self._refresh_notes(preserve_path=current_path)
 
     def _refresh_notes(self, preserve_path: Optional[str] = None) -> None:
         """Reload notes for the current folder."""
@@ -117,6 +154,15 @@ class MainWindow(QMainWindow):
             self._refresh_notes(preserve_path=str(new_note.path))
             self.editor.editor.setFocus()
 
+    def _on_create_note_with_content(self, initial_content: str) -> None:
+        """Create a new note with typed content when user writes on empty canvas."""
+        title, _ = Note.parse_title_and_snippet(initial_content, fallback_title="New Note")
+        new_note = self.storage.create_note(folder=self._current_folder, initial_title=title)
+        if new_note is not None:
+            self.storage.save_note_content(new_note.path, initial_content)
+            self._current_note = Note.from_file(new_note.path)
+            self._refresh_notes(preserve_path=str(new_note.path))
+
     def _on_content_saved(self, new_content: str) -> None:
         if self._current_note is None:
             return
@@ -145,14 +191,14 @@ class MainWindow(QMainWindow):
         if self._current_note is None:
             return
 
-        reply = QMessageBox.question(
+        confirmed = ModernConfirmDialog.ask(
             self,
-            "Delete Note",
-            f"Are you sure you want to delete '{self._current_note.title}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            title="Delete Note",
+            message=f"Are you sure you want to delete '{self._current_note.title}'?",
+            confirm_text="Delete",
+            is_destructive=True,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if confirmed:
             self.storage.delete_note(self._current_note.path)
             self._current_note = None
             self._refresh_notes()

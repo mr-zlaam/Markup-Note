@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Note Taker
+Comment=Lightweight Markdown Notes with Apple Notes Aesthetic
+Exec=python3 /home/redhats/Work/Desktop-apps/Note-Taker/main.py
+Terminal=false
+Type=Application
+Categories=Office;Utility;TextEditor;
+Keywords=markdown;notes;editor;text;
+StartupNotify=true

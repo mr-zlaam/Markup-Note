@@ -6,7 +6,6 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -14,6 +13,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ui.dialogs import ModernInputDialog
 
 
 class FolderSidebar(QWidget):
@@ -64,14 +65,14 @@ class FolderSidebar(QWidget):
         self.list_widget.clear()
 
         # Item 0: All Notes (Root)
-        all_notes_item = QListWidgetItem("📁  All Notes")
+        all_notes_item = QListWidgetItem("All Notes")
         all_notes_item.setData(Qt.ItemDataRole.UserRole, None)
         self.list_widget.addItem(all_notes_item)
 
         selected_item = all_notes_item
 
         for folder in folders:
-            item = QListWidgetItem(f"📁  {folder.name}")
+            item = QListWidgetItem(folder.name)
             item.setData(Qt.ItemDataRole.UserRole, folder)
             self.list_widget.addItem(item)
             if current_selection is not None and folder == current_selection:
@@ -87,7 +88,7 @@ class FolderSidebar(QWidget):
             self.folder_selected.emit(folder_path)
 
     def _on_add_folder_clicked(self) -> None:
-        folder_name, ok = QInputDialog.getText(
+        folder_name, ok = ModernInputDialog.get_text(
             self, "New Folder", "Enter folder name:"
         )
         if ok and folder_name.strip():

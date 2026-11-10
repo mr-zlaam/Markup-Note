@@ -34,6 +34,23 @@ from utils.markdown import (
     get_checkbox_info,
     is_checkbox_line,
 )
+from utils.math_engine import (
+    INLINE_MATH_RE,
+    render_math_to_pixmap,
+)
+from utils.mermaid_engine import (
+    render_mermaid_to_pixmap,
+)
+from utils.table import (
+    create_empty_table_row,
+    find_next_cell_pos,
+    find_prev_cell_pos,
+    is_empty_table_row,
+    is_table_row,
+    is_table_separator,
+    render_table,
+    split_table_cells,
+)
 
 
 class MarkdownEditor(QTextEdit):
@@ -60,50 +77,152 @@ class MarkdownEditor(QTextEdit):
         # Attach cursor-aware Obsidian syntax highlighter
         self.highlighter = MarkdownHighlighter(self.document())
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
+        self.document().contentsChanged.connect(self._on_contents_changed)
+        self._rendered_block_rects: list[tuple[int, int, QRectF]] = []
 
-        # Enable mouse tracking so hovering over checkboxes shows a pointer cursor
+        # Enable mouse tracking so hovering over checkboxes and preview cards shows a pointer cursor
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
 
+    def _on_contents_changed(self) -> None:
+        """Recompute table, math, and mermaid regions on text content modification."""
+        changed = self.highlighter.refresh_regions()
+        for b_num in changed:
+            b = self.document().findBlockByNumber(b_num)
+            if b.isValid():
+                self.highlighter.rehighlightBlock(b)
+        self.viewport().update()
+
     def _on_cursor_position_changed(self) -> None:
-        """Rehighlight the previous and current lines when the cursor moves between lines."""
+        """Rehighlight lines and regions when the cursor moves between lines."""
         new_block = self.textCursor().block()
         new_block_num = new_block.blockNumber()
         old_block_num = self.highlighter.active_block_number
 
         if new_block_num != old_block_num:
             self.highlighter.active_block_number = new_block_num
-            old_block = self.document().findBlockByNumber(old_block_num)
-            if old_block.isValid():
-                self.highlighter.rehighlightBlock(old_block)
-            if new_block.isValid():
-                self.highlighter.rehighlightBlock(new_block)
+            changed = self.highlighter.refresh_regions()
+            changed.add(old_block_num)
+            changed.add(new_block_num)
+            for b_num in changed:
+                b = self.document().findBlockByNumber(b_num)
+                if b.isValid():
+                    self.highlighter.rehighlightBlock(b)
         self.viewport().update()
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        """Paint the editor text and overlay crisp graphical checkboxes on checklist lines."""
+        """Paint editor text, vector checkboxes, styled tables, math equations, and mermaid diagrams."""
         super().paintEvent(event)
 
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
+        active_bn = self.highlighter.active_block_number
+        vp_height = self.viewport().height()
+        vp_width = self.viewport().width()
+
+        self._rendered_block_rects.clear()
+
+        # 1. Render Inactive Tables
+        for tr in self.highlighter.table_regions:
+            if tr.start_block <= active_bn <= tr.end_block:
+                continue  # Active editing mode for this table
+            b_top = self.document().findBlockByNumber(tr.start_block)
+            b_bot = self.document().findBlockByNumber(tr.end_block)
+            if not (b_top.isValid() and b_bot.isValid()):
+                continue
+
+            r_top = self.cursorRect(QTextCursor(b_top))
+            r_bot = self.cursorRect(QTextCursor(b_bot))
+            if r_top.top() > vp_height or r_bot.bottom() < 0:
+                continue
+
+            avail_w = max(100.0, float(vp_width - r_top.left() - 28))
+            table_rect = QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
+            self._rendered_block_rects.append((tr.start_block, tr.end_block, table_rect))
+            render_table(painter, table_rect, tr, self.font())
+
+        # 2. Render Inactive Display Math ($$ ... $$)
+        for mr in self.highlighter.math_regions:
+            if mr.start_block <= active_bn <= mr.end_block:
+                continue
+            b_top = self.document().findBlockByNumber(mr.start_block)
+            b_bot = self.document().findBlockByNumber(mr.end_block)
+            if not (b_top.isValid() and b_bot.isValid()):
+                continue
+
+            r_top = self.cursorRect(QTextCursor(b_top))
+            r_bot = self.cursorRect(QTextCursor(b_bot))
+            if r_top.top() > vp_height or r_bot.bottom() < 0:
+                continue
+
+            math_rect = QRectF(float(r_top.left()), float(r_top.top()), float(vp_width - r_top.left() - 28), float(r_bot.bottom() - r_top.top()))
+            self._rendered_block_rects.append((mr.start_block, mr.end_block, math_rect))
+
+            pix = render_math_to_pixmap(mr.latex, font_size=19.0, display_mode=True)
+            log_w = pix.width() / pix.devicePixelRatio()
+            log_h = pix.height() / pix.devicePixelRatio()
+            px = math_rect.left() + max(0.0, (math_rect.width() - log_w) / 2.0)
+            py = math_rect.top() + max(0.0, (math_rect.height() - log_h) / 2.0)
+            painter.drawPixmap(QPointF(px, py), pix)
+
+        # 3. Render Inactive Mermaid Diagrams (```mermaid ... ```)
+        for mmd in self.highlighter.mermaid_regions:
+            if mmd.start_block <= active_bn <= mmd.end_block:
+                continue
+            b_top = self.document().findBlockByNumber(mmd.start_block)
+            b_bot = self.document().findBlockByNumber(mmd.end_block)
+            if not (b_top.isValid() and b_bot.isValid()):
+                continue
+
+            r_top = self.cursorRect(QTextCursor(b_top))
+            r_bot = self.cursorRect(QTextCursor(b_bot))
+            if r_top.top() > vp_height or r_bot.bottom() < 0:
+                continue
+
+            mmd_rect = QRectF(float(r_top.left()), float(r_top.top()), float(vp_width - r_top.left() - 28), float(r_bot.bottom() - r_top.top()))
+            self._rendered_block_rects.append((mmd.start_block, mmd.end_block, mmd_rect))
+
+            pix = render_mermaid_to_pixmap(mmd.source)
+            log_w = pix.width() / pix.devicePixelRatio()
+            log_h = pix.height() / pix.devicePixelRatio()
+            px = mmd_rect.left() + max(0.0, (mmd_rect.width() - log_w) / 2.0)
+            py = mmd_rect.top() + max(0.0, (mmd_rect.height() - log_h) / 2.0)
+            painter.drawPixmap(QPointF(px, py), pix)
+
+        # 4. Render Checkboxes & Inactive Inline Math ($...$)
         block = self.document().firstBlock()
-        viewport_height = self.viewport().height()
-
         while block.isValid():
             if block.isVisible():
+                b_num = block.blockNumber()
                 text = block.text()
+
+                # Checkbox
                 match = CHECKBOX_PATTERN.match(text)
                 if match:
                     indent, _, status, _ = match.groups()
                     c = QTextCursor(block)
                     c.setPosition(block.position() + len(indent))
                     rect = self.cursorRect(c)
-
-                    if rect.top() > viewport_height:
+                    if rect.top() > vp_height:
                         break
                     if rect.bottom() >= 0:
                         self._draw_checkbox(painter, rect, status.lower() == "x")
+
+                # Inline Math on inactive blocks
+                if b_num != active_bn and "$" in text:
+                    for m in INLINE_MATH_RE.finditer(text):
+                        expr = m.group(1)
+                        c = QTextCursor(block)
+                        c.setPosition(block.position() + m.start())
+                        rect = self.cursorRect(c)
+                        if rect.bottom() >= 0 and rect.top() <= vp_height:
+                            pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
+                            log_h = pix.height() / pix.devicePixelRatio()
+                            py = float(rect.top()) + (rect.height() - log_h) / 2.0
+                            painter.drawPixmap(QPointF(float(rect.left()), py), pix)
+
             block = block.next()
 
         painter.end()
@@ -160,21 +279,43 @@ class MarkdownEditor(QTextEdit):
             return block
         return None
 
+    def _region_at_pos(self, pos: QPointF) -> Optional[tuple[int, int, QRectF]]:
+        """Return the rendered preview card (start_block, end_block, rect) if clicked/hovered."""
+        for s_blk, e_blk, r in self._rendered_block_rects:
+            if r.contains(pos):
+                return s_blk, e_blk, r
+        return None
+
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Show a pointing hand cursor when hovering over a checkbox."""
+        """Show a pointing hand cursor when hovering over a checkbox or rendered preview card."""
         super().mouseMoveEvent(event)
-        if self._checkbox_block_at_pos(event.position()) is not None:
+        if (
+            self._checkbox_block_at_pos(event.position()) is not None
+            or self._region_at_pos(event.position()) is not None
+        ):
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         else:
             self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle clicking directly on graphical checkboxes to toggle their state."""
+        """Handle clicking directly on graphical checkboxes or rendered preview cards to edit."""
         if event.button() == Qt.MouseButton.LeftButton:
+            # 1. Checkbox click -> toggle
             block = self._checkbox_block_at_pos(event.position())
             if block is not None:
                 self._toggle_checkbox_at_block(block)
                 return
+
+            # 2. Rendered preview card click -> place cursor inside to edit
+            reg = self._region_at_pos(event.position())
+            if reg is not None:
+                s_blk, _, _ = reg
+                target_block = self.document().findBlockByNumber(s_blk)
+                if target_block.isValid():
+                    c = QTextCursor(target_block)
+                    c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    self.setTextCursor(c)
+                    return
 
         super().mousePressEvent(event)
 
@@ -184,6 +325,91 @@ class MarkdownEditor(QTextEdit):
         block = cursor.block()
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
+
+        # Check if inside a table row
+        if is_table_row(line_text):
+            # Tab inside table: advance to next cell (or create new row if at end)
+            if event.key() == Qt.Key.Key_Tab and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                next_pos = find_next_cell_pos(line_text, pos_in_block)
+                if next_pos is not None:
+                    c = QTextCursor(block)
+                    c.setPosition(block.position() + next_pos)
+                    self.setTextCursor(c)
+                else:
+                    next_b = block.next()
+                    if next_b.isValid() and is_table_row(next_b.text()):
+                        if is_table_separator(next_b.text()):
+                            next_b = next_b.next()
+                        if next_b.isValid() and is_table_row(next_b.text()):
+                            fp = find_next_cell_pos(next_b.text(), 0)
+                            c = QTextCursor(next_b)
+                            c.setPosition(next_b.position() + (fp or 2))
+                            self.setTextCursor(c)
+                    else:
+                        num_cols = len(split_table_cells(line_text))
+                        cursor.beginEditBlock()
+                        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                        cursor.insertText("\n" + create_empty_table_row(num_cols))
+                        cursor.endEditBlock()
+                        new_b = self.textCursor().block()
+                        fp = find_next_cell_pos(new_b.text(), 0)
+                        c = QTextCursor(new_b)
+                        c.setPosition(new_b.position() + (fp or 2))
+                        self.setTextCursor(c)
+                return
+
+            # Shift+Tab inside table: go to previous cell
+            if event.key() == Qt.Key.Key_Tab and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                prev_pos = find_prev_cell_pos(line_text, pos_in_block)
+                if prev_pos is not None:
+                    c = QTextCursor(block)
+                    c.setPosition(block.position() + prev_pos)
+                    self.setTextCursor(c)
+                else:
+                    prev_b = block.previous()
+                    if prev_b.isValid() and is_table_separator(prev_b.text()):
+                        prev_b = prev_b.previous()
+                    if prev_b.isValid() and is_table_row(prev_b.text()):
+                        pipes = [m.start() for m in re.finditer(r"\|", prev_b.text())]
+                        if len(pipes) >= 2:
+                            c = QTextCursor(prev_b)
+                            c.setPosition(prev_b.position() + pipes[-2] + 2)
+                            self.setTextCursor(c)
+                return
+
+            # Enter inside table: smart row continuation or exit
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
+                event.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)
+            ):
+                if is_empty_table_row(line_text):
+                    # Exit table: remove current empty row
+                    cursor.beginEditBlock()
+                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.removeSelectedText()
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
+                else:
+                    num_cols = len(split_table_cells(line_text))
+                    prev_b = block.previous()
+                    is_first_header = not (prev_b.isValid() and is_table_row(prev_b.text()))
+                    cursor.beginEditBlock()
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    if is_first_header:
+                        sep = "|" + "|".join("---" for _ in range(num_cols)) + "|"
+                        cursor.insertText("\n" + sep + "\n" + create_empty_table_row(num_cols))
+                    else:
+                        cursor.insertText("\n" + create_empty_table_row(num_cols))
+                    cursor.endEditBlock()
+                    new_b = self.textCursor().block()
+                    fp = find_next_cell_pos(new_b.text(), 0)
+                    c = QTextCursor(new_b)
+                    c.setPosition(new_b.position() + (fp or 2))
+                    self.setTextCursor(c)
+                    self.ensureCursorVisible()
+                    self.viewport().update()
+                    return
 
         # 0. Auto-expand "- []" into "- [ ]" when the user types closing bracket "]"
         if event.text() == "]" and re.match(r"^\s*[-*+]\s*\[$", line_text[:pos_in_block]):
@@ -380,6 +606,7 @@ class EditorPanel(QWidget):
         self.editor.blockSignals(True)
         self.editor.setPlainText(cleaned_content)
         self.editor.highlighter.active_block_number = self.editor.textCursor().block().blockNumber()
+        self.editor.highlighter.refresh_regions()
         self.editor.highlighter.rehighlight()
         self.editor.viewport().update()
         self.editor.blockSignals(False)

@@ -69,6 +69,15 @@
   * `Ctrl+Enter` shortcut to toggle current line checkbox or convert line into a checkbox.
   * Smart `Enter` auto-continuation for checklists and bulleted/numbered lists.
   * `Tab` / `Shift+Tab` 2-space indentation.
+* 🟢 **`[Completed]`** **Advanced Markdown: Styled Vector Tables (`utils/table.py`):**
+  * Auto-formatting pipe tables with column alignment (`:---`, `:---:`, `---:`), alternating rows, and rounded card styling.
+  * `Tab` to navigate cells, `Shift+Tab` to go to previous cell, `Enter` to auto-continue rows or auto-generate header separators.
+* 🟢 **`[Completed]`** **Advanced Markdown: LaTeX Math Typesetting (`utils/math_engine.py`):**
+  * Offline pure-Python recursive-descent math parser and typesetter.
+  * Inline math (`$...$`) and display math (`$$...$$`), fractions, roots, subscripts/superscripts, matrices (`pmatrix`, `bmatrix`, `vmatrix`), Greek symbols, and big operators (`∑`, `∫`, `∏`, `lim`).
+* 🟢 **`[Completed]`** **Advanced Markdown: Mermaid Diagrams (`utils/mermaid_engine.py`):**
+  * Native pure-Python vector renderer for Flowcharts/Graphs (`graph TD`/`LR`), Sequence Diagrams, State Diagrams, and Pie Charts.
+  * Cursor-aware editing: collapses to vector preview on inactive blocks, reveals raw markdown for editing when clicked.
 
 ---
 

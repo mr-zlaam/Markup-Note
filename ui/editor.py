@@ -1,9 +1,11 @@
 """Editor canvas panel with Obsidian-style cursor-aware Live Preview and debounced auto-save."""
 
+import math
 import re
+import time
 from typing import Optional
 
-from PyQt6.QtCore import QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -18,6 +20,7 @@ from PyQt6.QtGui import (
     QTextBlock,
     QTextCursor,
     QTextOption,
+    QTouchEvent,
     QWheelEvent,
 )
 from PyQt6.QtWidgets import (
@@ -33,6 +36,7 @@ from PyQt6.QtWidgets import (
 
 from core.note import Note
 from ui.highlighter import HR_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
+from utils.touch import TouchScrollTracker, is_touch_event
 from utils.code_engine import (
     CodeRegion,
     get_code_content_width,
@@ -112,9 +116,23 @@ class MarkdownEditor(QTextEdit):
         self._copied_timer.setInterval(2000)
         self._copied_timer.timeout.connect(self._reset_copied_state)
 
-        # Enable mouse tracking so hovering over checkboxes and preview cards shows a pointer cursor
+        # Enable mouse and touch tracking
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+
+        # Touchscreen gesture tracking & kinetic momentum
+        self._touch_tracker = TouchScrollTracker()
+        self._last_tap_time: float = 0.0
+        self._last_tap_pos: QPointF = QPointF()
+
+        self._kinetic_timer = QTimer(self)
+        self._kinetic_timer.setInterval(16)  # ~60 FPS
+        self._kinetic_timer.timeout.connect(self._on_kinetic_tick)
+        self._kinetic_vx: float = 0.0
+        self._kinetic_vy: float = 0.0
+        self._kinetic_target: Optional[tuple[str, int, float]] = None
 
     def _reset_copied_state(self) -> None:
         """Reset the copy button feedback to default."""
@@ -495,8 +513,216 @@ class MarkdownEditor(QTextEdit):
             clean_url = "https://" + clean_url
         QDesktopServices.openUrl(QUrl(clean_url))
 
+    def _find_hscroll_target(self, pos: QPointF) -> Optional[tuple[str, int, float]]:
+        """Find if pos is within an inactive table or code card that has horizontal overflow."""
+        active_bn = self.highlighter.active_block_number
+        for tr in self.highlighter.table_regions:
+            if not (tr.start_block <= active_bn <= tr.end_block):
+                tbl_rect = self._get_table_rect(tr)
+                if tbl_rect is not None and tbl_rect.contains(pos):
+                    content_w, _ = get_table_column_widths(tr, self.font(), tbl_rect.width())
+                    max_s = max(0.0, content_w - tbl_rect.width())
+                    if max_s > 0:
+                        return ("table", tr.start_block, max_s)
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    content_w = get_code_content_width(cr)
+                    max_s = max(0.0, content_w - (card_rect.width() - 28.0))
+                    if max_s > 0:
+                        return ("code", cr.start_block, max_s)
+        return None
+
+    def _on_touch_down(self, pos: QPointF) -> None:
+        """Handle touchscreen press / contact begin."""
+        self._kinetic_timer.stop()
+        self._kinetic_vx = 0.0
+        self._kinetic_vy = 0.0
+        target = self._find_hscroll_target(pos)
+        self._touch_tracker.start(pos, time.time(), target)
+
+    def _on_touch_move(self, pos: QPointF) -> None:
+        """Handle touchscreen drag / move."""
+        dx, dy, is_scrolling = self._touch_tracker.update(pos, time.time())
+        if is_scrolling:
+            # Prevent text selection on touchscreen drag
+            c = self.textCursor()
+            if c.hasSelection():
+                c.clearSelection()
+                self.setTextCursor(c)
+
+            # 1. Vertical scroll
+            if dy != 0:
+                vsb = self.verticalScrollBar()
+                vsb.setValue(int(vsb.value() - dy))
+
+            # 2. Horizontal scroll
+            target = self._touch_tracker.target_region
+            if target is not None:
+                kind, blk_id, max_s = target
+                if kind == "table":
+                    cur_s = self._table_scroll_x.get(blk_id, 0.0)
+                    new_s = max(0.0, min(max_s, cur_s - dx))
+                    if new_s != cur_s:
+                        self._table_scroll_x[blk_id] = new_s
+                        self.viewport().update()
+                elif kind == "code":
+                    cur_s = self._code_scroll_x.get(blk_id, 0.0)
+                    new_s = max(0.0, min(max_s, cur_s - dx))
+                    if new_s != cur_s:
+                        self._code_scroll_x[blk_id] = new_s
+                        self.viewport().update()
+            else:
+                hsb = self.horizontalScrollBar()
+                if hsb.maximum() > 0 and dx != 0:
+                    hsb.setValue(int(hsb.value() - dx))
+
+    def _on_touch_up(self, pos: QPointF) -> None:
+        """Handle touchscreen release / contact end."""
+        target = self._touch_tracker.target_region
+        was_scrolling, vx, vy = self._touch_tracker.end(time.time())
+        if was_scrolling:
+            if abs(vy) > 0.8 or abs(vx) > 0.8:
+                self._kinetic_vx = vx
+                self._kinetic_vy = vy
+                self._kinetic_target = target
+                self._kinetic_timer.start(16)
+        else:
+            self._handle_touch_tap(pos)
+
+    def _on_kinetic_tick(self) -> None:
+        """Smooth momentum deceleration tick."""
+        if abs(self._kinetic_vy) > 0.4:
+            vsb = self.verticalScrollBar()
+            vsb.setValue(int(vsb.value() - self._kinetic_vy))
+            self._kinetic_vy *= 0.92
+        else:
+            self._kinetic_vy = 0.0
+
+        if abs(self._kinetic_vx) > 0.4 and self._kinetic_target is not None:
+            kind, blk_id, max_s = self._kinetic_target
+            if kind == "table":
+                cur_s = self._table_scroll_x.get(blk_id, 0.0)
+                new_s = max(0.0, min(max_s, cur_s - self._kinetic_vx))
+                self._table_scroll_x[blk_id] = new_s
+                self.viewport().update()
+            elif kind == "code":
+                cur_s = self._code_scroll_x.get(blk_id, 0.0)
+                new_s = max(0.0, min(max_s, cur_s - self._kinetic_vx))
+                self._code_scroll_x[blk_id] = new_s
+                self.viewport().update()
+            self._kinetic_vx *= 0.92
+        else:
+            self._kinetic_vx = 0.0
+
+        if abs(self._kinetic_vy) <= 0.4 and abs(self._kinetic_vx) <= 0.4:
+            self._kinetic_timer.stop()
+
+    def _handle_touch_tap(self, pos: QPointF) -> None:
+        """Process a clean tap or double-tap on touchscreen without drag."""
+        now = time.time()
+        is_double_tap = (
+            (now - self._last_tap_time <= 0.35)
+            and (math.hypot(pos.x() - self._last_tap_pos.x(), pos.y() - self._last_tap_pos.y()) < 24.0)
+        )
+        self._last_tap_time = now
+        self._last_tap_pos = pos
+
+        if is_double_tap:
+            reg = self._region_at_pos(pos)
+            if reg is not None:
+                s_blk, _, _ = reg
+                target_block = self.document().findBlockByNumber(s_blk + 1)
+                if not target_block.isValid():
+                    target_block = self.document().findBlockByNumber(s_blk)
+                if target_block.isValid():
+                    c = QTextCursor(target_block)
+                    c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    self.setTextCursor(c)
+                    self.ensureCursorVisible()
+                    self.viewport().update()
+                    return
+            else:
+                c = self.cursorForPosition(pos.toPoint())
+                c.select(QTextCursor.SelectionType.WordUnderCursor)
+                self.setTextCursor(c)
+                return
+
+        # Single Tap Actions:
+        active_bn = self.highlighter.active_block_number
+
+        # 1. Check Copy button
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    btn_rect = get_code_copy_button_rect(card_rect)
+                    if btn_rect.contains(pos):
+                        code_text = "\n".join(cr.lines)
+                        QApplication.clipboard().setText(code_text)
+                        self._copied_code_block = cr.start_block
+                        self._copied_timer.start(2000)
+                        self.viewport().update()
+                        return
+
+        # 2. Check Edit button
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    edit_btn = get_code_edit_button_rect(card_rect)
+                    if edit_btn.contains(pos):
+                        target_block = self.document().findBlockByNumber(cr.start_block + 1)
+                        if not target_block.isValid():
+                            target_block = self.document().findBlockByNumber(cr.start_block)
+                        if target_block.isValid():
+                            c = QTextCursor(target_block)
+                            c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                            self.setTextCursor(c)
+                            self.ensureCursorVisible()
+                            self.viewport().update()
+                            return
+
+        # 3. Checkbox tap
+        block = self._checkbox_block_at_pos(pos)
+        if block is not None:
+            self._toggle_checkbox_at_block(block)
+            return
+
+        # 4. Inactive preview card tap -> do nothing (keeps card intact)
+        if self._region_at_pos(pos) is not None:
+            return
+
+        # 5. Normal text tap -> position cursor cleanly with no selection
+        c = self.cursorForPosition(pos.toPoint())
+        c.clearSelection()
+        self.setTextCursor(c)
+        self.ensureCursorVisible()
+
+    def viewportEvent(self, event: QEvent) -> bool:
+        """Handle touchscreen gestures natively without triggering text selection."""
+        t = event.type()
+        if t in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd, QEvent.Type.TouchCancel):
+            if isinstance(event, QTouchEvent) and event.points():
+                pt = event.points()[0]
+                pos = pt.position()
+                if t == QEvent.Type.TouchBegin:
+                    self._on_touch_down(pos)
+                elif t == QEvent.Type.TouchUpdate:
+                    self._on_touch_move(pos)
+                elif t in (QEvent.Type.TouchEnd, QEvent.Type.TouchCancel):
+                    self._on_touch_up(pos)
+                event.accept()
+                return True
+        return super().viewportEvent(event)
+
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Show pointer cursor on interactive elements and handle scrollbar dragging."""
+        if is_touch_event(event) or self._touch_tracker.is_active:
+            self._on_touch_move(event.position())
+            return
+
         super().mouseMoveEvent(event)
         pos = event.position()
         active_bn = self.highlighter.active_block_number
@@ -585,10 +811,10 @@ class MarkdownEditor(QTextEdit):
             QToolTip.hideText()
             return
 
-        # Inactive preview card hover (prompt double click to edit)
+        # Inactive preview card hover
         if self._region_at_pos(pos) is not None:
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-            QToolTip.showText(event.globalPosition().toPoint(), "Double-click to edit", self.viewport())
+            QToolTip.hideText()
             return
 
         link_info = self._link_at_pos(pos)
@@ -607,6 +833,10 @@ class MarkdownEditor(QTextEdit):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle clicking directly on checkboxes, buttons, scrollbars, or Ctrl+Click on links."""
+        if is_touch_event(event):
+            self._on_touch_down(event.position())
+            return
+
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
             active_bn = self.highlighter.active_block_number
@@ -728,7 +958,11 @@ class MarkdownEditor(QTextEdit):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Finish any active scrollbar dragging."""
+        """Finish any active scrollbar dragging or touch scrolling."""
+        if is_touch_event(event) or self._touch_tracker.is_active:
+            self._on_touch_up(event.position())
+            return
+
         self._scrollbar_drag = None
         super().mouseReleaseEvent(event)
 

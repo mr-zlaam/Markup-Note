@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScroller,
     QVBoxLayout,
     QWidget,
 )
@@ -56,6 +57,9 @@ class FolderSidebar(QWidget):
         # Folder List
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setObjectName("SidebarList")
+        self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.list_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        QScroller.grabGesture(self.list_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture)
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.list_widget)
 

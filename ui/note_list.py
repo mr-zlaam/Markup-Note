@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScroller,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -132,6 +133,9 @@ class NoteListPanel(QWidget):
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setObjectName("NoteCardsList")
         self.list_widget.setItemDelegate(NoteCardDelegate(self.list_widget))
+        self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.list_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        QScroller.grabGesture(self.list_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture)
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.list_widget)
 

@@ -101,7 +101,13 @@
   * Double-click to edit: Double-clicking any rendered preview card smoothly activates inline Markdown editing at the cursor position.
   * Code card `[Edit]` button: Added an `[Edit]` button in the code card header bar next to `[Copy]` for direct one-click editing.
   * `Escape` key exit: Pressing `Escape` when inside any active code, table, math, or mermaid block exits edit mode and immediately re-collapses back to the rendered card.
-  * Hover feedback: Shows pointing hand cursor and "Double-click to edit" or "Edit code block" tooltip on hover.
+  * Hover feedback: Shows pointing hand cursor on hover (clean, no intrusive tooltip).
+* 🟢 **`[Completed]`** **Touchscreen Gesture Support & Kinetic Scrolling (`utils/touch.py`):**
+  * Touch vs Mouse Separation: Touch contacts and drags are cleanly differentiated from mouse inputs, completely eliminating accidental full-document text selections when scrolling with a finger on touchscreen laptops.
+  * Native Touch Scrolling: Swiping up/down on the touchscreen smoothly scrolls the note document with kinetic momentum coasting (60 FPS deceleration).
+  * Horizontal Touch Swipe: Swiping horizontally over wide tables or code blocks scrolls the card content smoothly to the left/right.
+  * Clean Touch Taps: Single-tapping positions the cursor or toggles checkboxes without dragging selections; double-tapping preview cards enters inline Markdown editing.
+  * System-wide Touch Integration: Enabled touch scrolling on the Note Cards list and Sidebar folders tree view.
 
 ---
 

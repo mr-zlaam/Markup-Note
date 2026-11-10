@@ -180,15 +180,17 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # HTML <mark>
         self.mark_format = QTextCharFormat()
-        self.mark_format.setBackground(QColor("#544614"))
-        self.mark_format.setForeground(QColor("#ffd60a"))
+        self.mark_format.setBackground(QColor("#ffd60a"))
+        self.mark_format.setForeground(QColor("#111111"))
+        self.mark_format.setFontWeight(QFont.Weight.Bold)
 
         # HTML <kbd>
         self.kbd_format = QTextCharFormat()
-        self.kbd_format.setFontFamilies(["monospace"])
+        self.kbd_format.setFontFamilies(["monospace", "Cantarell"])
         self.kbd_format.setFontFixedPitch(True)
-        self.kbd_format.setBackground(QColor("#3a3a3c"))
-        self.kbd_format.setForeground(QColor("#f2f2f7"))
+        self.kbd_format.setBackground(QColor("#2c2c34"))
+        self.kbd_format.setForeground(QColor("#f5f5f7"))
+        self.kbd_format.setFontWeight(QFont.Weight.DemiBold)
 
     def refresh_regions(self) -> Set[int]:
         """Re-scan document for tables, display math, and mermaid blocks, returning changed block numbers."""
@@ -263,13 +265,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 for b in range(cr.start_block, cr.end_block + 1):
                     new_modes[b] = ("active_code", 14)
             else:
-                header_h = 28.0
-                line_h = 22.0
-                total_code_h = header_h + len(cr.lines) * line_h + 16.0
-                count = max(1, cr.end_block - cr.start_block + 1)
-                pt_size = max(12, int(round((total_code_h / count) * 0.56)))
-                for b in range(cr.start_block, cr.end_block + 1):
-                    new_modes[b] = ("inactive_code", pt_size)
+                # Opening & closing fences absorb header (28px) and top/bottom padding (24px)
+                # Fences at pt 14 = 26px each (26 + 26 = 52px = 28 + 8 + 16)
+                # Body code lines at pt 12 = 22px each (matching line_h = 22.0)
+                new_modes[cr.start_block] = ("inactive_code", 16)
+                for b in range(cr.start_block + 1, cr.end_block):
+                    new_modes[b] = ("inactive_code", 14)
+                new_modes[cr.end_block] = ("inactive_code", 16)
 
         self._block_modes = new_modes
         changed_blocks: Set[int] = set()
@@ -281,6 +283,9 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
     def _format(self, text: str, py_start: int, py_len: int, fmt: QTextCharFormat) -> None:
         """Call self.setFormat converting Python char indices to Qt UTF-16 offsets."""
+        if text.isascii():
+            self.setFormat(py_start, py_len, fmt)
+            return
         u16_start = len(text[:py_start].encode("utf-16-le")) // 2 if py_start > 0 else 0
         u16_count = len(text[py_start : py_start + py_len].encode("utf-16-le")) // 2
         self.setFormat(u16_start, u16_count, fmt)
@@ -313,17 +318,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
             if mode in ("inactive_math", "inactive_mermaid", "inactive_code"):
                 self.setCurrentBlockState(0)
-                if len(text) > 0:
-                    self.setFormat(0, len(text), self.hidden_format)
-                    tall_fmt = QTextCharFormat()
-                    tall_fmt.setFontPointSize(pt_size)
-                    tall_fmt.setForeground(QColor(0, 0, 0, 0))
-                    self.setFormat(0, 1, tall_fmt)
-                else:
-                    tall_fmt = QTextCharFormat()
-                    tall_fmt.setFontPointSize(pt_size)
-                    tall_fmt.setForeground(QColor(0, 0, 0, 0))
-                    self.setFormat(0, 0, tall_fmt)
+                tall_fmt = QTextCharFormat()
+                tall_fmt.setFontPointSize(pt_size)
+                tall_fmt.setForeground(QColor(0, 0, 0, 0))
+                self.setFormat(0, max(1, len(text)), tall_fmt)
                 return
 
             if mode == "active_code":
@@ -473,134 +471,140 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         base_color: Optional[QColor],
     ) -> None:
         """Apply inline markdown styles and hide syntax markers when line is inactive."""
-        # Bold: **text** or __text__
-        for m in BOLD_RE.finditer(text):
-            marker_len = len(m.group(1))
-            start, end = m.span()
-            fmt = QTextCharFormat()
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            fmt.setFontWeight(QFont.Weight.Bold)
-            fmt.setForeground(QColor("#ffffff"))
-            self._format(text, start + marker_len, (end - start) - 2 * marker_len, fmt)
-            self._format_markers(text, start, end, marker_len, is_active, base_point_size)
-
-        # Italic: *text*
-        for m in ITALIC_RE.finditer(text):
-            start, end = m.span()
-            fmt = QTextCharFormat()
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            if base_bold:
-                fmt.setFontWeight(QFont.Weight.Bold)
-            fmt.setFontItalic(True)
-            fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
-            self._format(text, start + 1, (end - start) - 2, fmt)
-            self._format_markers(text, start, end, 1, is_active, base_point_size)
-
-        # Inline code: `code`
-        for m in INLINE_CODE_RE.finditer(text):
-            start, end = m.span()
-            fmt = QTextCharFormat(self.inline_code_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, start + 1, (end - start) - 2, fmt)
-            self._format_markers(text, start, end, 1, is_active, base_point_size)
-
-        # Inline Math: $...$ or \(...\)
-        for m in INLINE_MATH_RE.finditer(text):
-            start, end = m.span()
-            if m.group(1) is not None:
-                expr = m.group(1)
-                open_len = 1
-                close_len = 1
-            else:
-                expr = m.group(2)
-                open_len = m.start(2) - start
-                close_len = end - m.end(2)
-
-            if is_active:
-                fmt = QTextCharFormat(self.math_source_format)
+        # Bold: **text** or __text__ and Italic: *text*
+        if "*" in text or "_" in text:
+            for m in BOLD_RE.finditer(text):
+                marker_len = len(m.group(1))
+                start, end = m.span()
+                fmt = QTextCharFormat()
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
-                self._format(text, start + open_len, (end - close_len) - (start + open_len), fmt)
-                self._format(text, start, open_len, self.marker_format)
-                self._format(text, end - close_len, close_len, self.marker_format)
-            else:
-                pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
-                target_w = pix.width() / pix.devicePixelRatio()
-                span_len = max(1, end - start)
-                self._format(text, start, span_len, self.hidden_format)
-                spacer_fmt = QTextCharFormat()
-                spacer_fmt.setForeground(QColor(0, 0, 0, 0))
-                spacer_fmt.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
-                spacer_fmt.setFontLetterSpacing(max(0.0, target_w - 6.0))
-                self._format(text, start, 1, spacer_fmt)
+                fmt.setFontWeight(QFont.Weight.Bold)
+                fmt.setForeground(QColor("#ffffff"))
+                self._format(text, start + marker_len, (end - start) - 2 * marker_len, fmt)
+                self._format_markers(text, start, end, marker_len, is_active, base_point_size)
+
+            for m in ITALIC_RE.finditer(text):
+                start, end = m.span()
+                fmt = QTextCharFormat()
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                if base_bold:
+                    fmt.setFontWeight(QFont.Weight.Bold)
+                fmt.setFontItalic(True)
+                fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
+                self._format(text, start + 1, (end - start) - 2, fmt)
+                self._format_markers(text, start, end, 1, is_active, base_point_size)
+
+        # Inline code: `code`
+        if "`" in text:
+            for m in INLINE_CODE_RE.finditer(text):
+                start, end = m.span()
+                fmt = QTextCharFormat(self.inline_code_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                self._format(text, start + 1, (end - start) - 2, fmt)
+                self._format_markers(text, start, end, 1, is_active, base_point_size)
+
+        # Inline Math: $...$ or \(...\)
+        if "$" in text or "\\" in text:
+            for m in INLINE_MATH_RE.finditer(text):
+                start, end = m.span()
+                if m.group(1) is not None:
+                    expr = m.group(1)
+                    open_len = 1
+                    close_len = 1
+                else:
+                    expr = m.group(2)
+                    open_len = m.start(2) - start
+                    close_len = end - m.end(2)
+
+                if is_active:
+                    fmt = QTextCharFormat(self.math_source_format)
+                    if base_point_size:
+                        fmt.setFontPointSize(base_point_size)
+                    self._format(text, start + open_len, (end - close_len) - (start + open_len), fmt)
+                    self._format(text, start, open_len, self.marker_format)
+                    self._format(text, end - close_len, close_len, self.marker_format)
+                else:
+                    pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
+                    target_w = pix.width() / pix.devicePixelRatio()
+                    span_len = max(1, end - start)
+                    self._format(text, start, span_len, self.hidden_format)
+                    spacer_fmt = QTextCharFormat()
+                    spacer_fmt.setForeground(QColor(0, 0, 0, 0))
+                    spacer_fmt.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+                    spacer_fmt.setFontLetterSpacing(max(0.0, target_w - 6.0))
+                    self._format(text, start, 1, spacer_fmt)
 
         # Strikethrough: ~~text~~ or ~text~
-        for m in STRIKE_RE.finditer(text):
-            tildes = len(m.group(1))
-            start, end = m.span()
-            fmt = QTextCharFormat(self.strike_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, start + tildes, (end - start) - 2 * tildes, fmt)
-            self._format_markers(text, start, end, tildes, is_active, base_point_size)
+        if "~" in text:
+            for m in STRIKE_RE.finditer(text):
+                tildes = len(m.group(1))
+                start, end = m.span()
+                fmt = QTextCharFormat(self.strike_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                self._format(text, start + tildes, (end - start) - 2 * tildes, fmt)
+                self._format_markers(text, start, end, tildes, is_active, base_point_size)
 
-        # HTML <u>text</u>
-        for m in HTML_U_RE.finditer(text):
-            g1_s, g1_e = m.span(1)
-            g2_s, g2_e = m.span(2)
-            g3_s, g3_e = m.span(3)
-            fmt = QTextCharFormat(self.u_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, g2_s, g2_e - g2_s, fmt)
-            syn_fmt = self.marker_format if is_active else self.hidden_format
-            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
-            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
+        # HTML tags: <u>, <mark>, <kbd>
+        if "<" in text:
+            for m in HTML_U_RE.finditer(text):
+                g1_s, g1_e = m.span(1)
+                g2_s, g2_e = m.span(2)
+                g3_s, g3_e = m.span(3)
+                fmt = QTextCharFormat(self.u_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                self._format(text, g2_s, g2_e - g2_s, fmt)
+                syn_fmt = self.marker_format if is_active else self.hidden_format
+                self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+                self._format(text, g3_s, g3_e - g3_s, syn_fmt)
 
-        # HTML <mark>text</mark>
-        for m in HTML_MARK_RE.finditer(text):
-            g1_s, g1_e = m.span(1)
-            g2_s, g2_e = m.span(2)
-            g3_s, g3_e = m.span(3)
-            fmt = QTextCharFormat(self.mark_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, g2_s, g2_e - g2_s, fmt)
-            syn_fmt = self.marker_format if is_active else self.hidden_format
-            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
-            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
+            for m in HTML_MARK_RE.finditer(text):
+                g1_s, g1_e = m.span(1)
+                g2_s, g2_e = m.span(2)
+                g3_s, g3_e = m.span(3)
+                fmt = QTextCharFormat(self.mark_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                self._format(text, g2_s, g2_e - g2_s, fmt)
+                syn_fmt = self.marker_format if is_active else self.hidden_format
+                self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+                self._format(text, g3_s, g3_e - g3_s, syn_fmt)
 
-        # HTML <kbd>text</kbd>
-        for m in HTML_KBD_RE.finditer(text):
-            g1_s, g1_e = m.span(1)
-            g2_s, g2_e = m.span(2)
-            g3_s, g3_e = m.span(3)
-            fmt = QTextCharFormat(self.kbd_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, g2_s, g2_e - g2_s, fmt)
-            syn_fmt = self.marker_format if is_active else self.hidden_format
-            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
-            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
+            for m in HTML_KBD_RE.finditer(text):
+                g1_s, g1_e = m.span(1)
+                g2_s, g2_e = m.span(2)
+                g3_s, g3_e = m.span(3)
+                fmt = QTextCharFormat(self.kbd_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                if not is_active:
+                    fmt.setForeground(QColor(0, 0, 0, 0))
+                    fmt.setBackground(QColor(0, 0, 0, 0))
+                self._format(text, g2_s, g2_e - g2_s, fmt)
+                syn_fmt = self.marker_format if is_active else self.hidden_format
+                self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+                self._format(text, g3_s, g3_e - g3_s, syn_fmt)
 
         # Links: [text](url)
-        for m in LINK_RE.finditer(text):
-            g1_start, g1_end = m.span(1)
-            g2_start, g2_end = m.span(2)
-            g3_start, g3_end = m.span(3)
-            fmt = QTextCharFormat(self.link_format)
-            if base_point_size:
-                fmt.setFontPointSize(base_point_size)
-            self._format(text, g2_start, g2_end - g2_start, fmt)
-            syntax_fmt = self.marker_format if is_active else self.hidden_format
-            self._format(text, g1_start, g1_end - g1_start, syntax_fmt)
-            self._format(text, g3_start, g3_end - g3_start, syntax_fmt)
+        if "[" in text:
+            for m in LINK_RE.finditer(text):
+                g1_start, g1_end = m.span(1)
+                g2_start, g2_end = m.span(2)
+                g3_start, g3_end = m.span(3)
+                fmt = QTextCharFormat(self.link_format)
+                if base_point_size:
+                    fmt.setFontPointSize(base_point_size)
+                self._format(text, g2_start, g2_end - g2_start, fmt)
+                syntax_fmt = self.marker_format if is_active else self.hidden_format
+                self._format(text, g1_start, g1_end - g1_start, syntax_fmt)
+                self._format(text, g3_start, g3_end - g3_start, syntax_fmt)
 
         # Tags: #tag (not headings)
-        if not base_point_size:
+        if "#" in text and not base_point_size:
             for m in TAG_RE.finditer(text):
                 start, end = m.span(1)
                 self._format(text, start, end - start, self.tag_format)

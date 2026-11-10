@@ -5,7 +5,7 @@ import re
 import time
 from typing import Optional
 
-from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
-from ui.highlighter import HR_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
+from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from utils.touch import TouchScrollTracker, is_touch_event
 from utils.code_engine import (
     CodeRegion,
@@ -134,6 +134,13 @@ class MarkdownEditor(QTextEdit):
         self._kinetic_vy: float = 0.0
         self._kinetic_target: Optional[tuple[str, int, float]] = None
 
+        # Debounced blockquote margin updates & atomic batch edit guard
+        self._updating_margins: bool = False
+        self._margin_timer = QTimer(self)
+        self._margin_timer.setSingleShot(True)
+        self._margin_timer.setInterval(50)
+        self._margin_timer.timeout.connect(self._update_blockquote_margins)
+
     def _reset_copied_state(self) -> None:
         """Reset the copy button feedback to default."""
         self._copied_code_block = None
@@ -151,18 +158,69 @@ class MarkdownEditor(QTextEdit):
         return QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
 
     def _get_code_card_rect(self, cr: CodeRegion) -> Optional[QRectF]:
-        """Compute the geometry QRectF of an inactive rendered code card."""
+        """Compute the tightly bounded geometry QRectF of an inactive rendered code card."""
         b_top = self.document().findBlockByNumber(cr.start_block)
         b_bot = self.document().findBlockByNumber(cr.end_block)
         if not (b_top.isValid() and b_bot.isValid()):
             return None
         r_top = self.cursorRect(QTextCursor(b_top))
-        r_bot = self.cursorRect(QTextCursor(b_bot))
+
         avail_w = max(100.0, float(self.viewport().width() - r_top.left() - 28.0))
-        return QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
+        header_h = 28.0
+        line_h = 22.0
+        # Exact height: header (28px) + top padding (8px) + code lines + bottom padding (16px)
+        card_h = header_h + 8.0 + len(cr.lines) * line_h + 16.0
+        return QRectF(float(r_top.left()), float(r_top.top()), avail_w, card_h)
+
+    def _update_blockquote_margins(self) -> None:
+        """Ensure all blockquotes have leftMargin proportional to their quote nesting depth."""
+        if self._updating_margins:
+            return
+        self._updating_margins = True
+        try:
+            doc = self.document()
+            b = doc.firstBlock()
+            cur = QTextCursor(doc)
+            cur.beginEditBlock()
+            try:
+                while b.isValid():
+                    text = b.text()
+                    target_margin = 0.0
+                    if ">" in text and b.userState() != 1:
+                        qm = QUOTE_RE.match(text)
+                        if qm:
+                            level = qm.group(1).count(">")
+                            if level > 0:
+                                target_margin = level * 18.0 + 8.0
+
+                    c = QTextCursor(b)
+                    bf = c.blockFormat()
+                    if abs(bf.leftMargin() - target_margin) > 0.5:
+                        bf.setLeftMargin(target_margin)
+                        c.setBlockFormat(bf)
+                    b = b.next()
+            finally:
+                cur.endEditBlock()
+        finally:
+            self._updating_margins = False
+
+    def insertFromMimeData(self, source: QMimeData) -> None:
+        """Ensure pasted content is always inserted as clean Markdown / plain text in a single edit block."""
+        if source.hasText():
+            text = source.text()
+            cursor = self.textCursor()
+            cursor.beginEditBlock()
+            try:
+                cursor.insertText(text)
+            finally:
+                cursor.endEditBlock()
+        else:
+            super().insertFromMimeData(source)
 
     def _on_contents_changed(self) -> None:
         """Recompute table, math, and mermaid regions on text content modification."""
+        if not self._updating_margins:
+            self._margin_timer.start()
         changed = self.highlighter.refresh_regions()
         for b_num in changed:
             b = self.document().findBlockByNumber(b_num)
@@ -274,22 +332,13 @@ class MarkdownEditor(QTextEdit):
             if cr.start_block <= active_bn <= cr.end_block:
                 continue
 
-            b_top = self.document().findBlockByNumber(cr.start_block)
-            b_bot = self.document().findBlockByNumber(cr.end_block)
-            if not (b_top.isValid() and b_bot.isValid()):
+            card_rect = self._get_code_card_rect(cr)
+            if card_rect is None:
                 continue
 
-            r_top = self.cursorRect(QTextCursor(b_top))
-            r_bot = self.cursorRect(QTextCursor(b_bot))
-            if r_top.top() > vp_height or r_bot.bottom() < 0:
+            if card_rect.top() > vp_height or card_rect.bottom() < 0:
                 continue
 
-            card_rect = QRectF(
-                float(r_top.left()),
-                float(r_top.top()),
-                float(vp_width - r_top.left() - 28.0),
-                float(r_bot.bottom() - r_top.top()),
-            )
             self._rendered_block_rects.append((cr.start_block, cr.end_block, card_rect))
             scroll_x = self._code_scroll_x.get(cr.start_block, 0.0)
             is_copied = self._copied_code_block == cr.start_block
@@ -306,97 +355,167 @@ class MarkdownEditor(QTextEdit):
             )
 
         # 5. Render Checkboxes, Inactive Bullets & Inactive Inline Math ($...$)
-        block = self.document().firstBlock()
+        # Start strictly from the first visible block in the viewport for O(viewport) performance
+        first_cursor = self.cursorForPosition(QPoint(0, 0))
+        block = first_cursor.block()
         while block.isValid():
-            if block.isVisible():
-                b_num = block.blockNumber()
-                text = block.text()
+            b_num = block.blockNumber()
+            c = QTextCursor(block)
+            b_rect = self.cursorRect(c)
+            if b_rect.top() > vp_height:
+                break
 
-                # Horizontal rule (draw clean vector divider line)
-                if HR_RE.match(text):
-                    c = QTextCursor(block)
-                    rect = self.cursorRect(c)
-                    if rect.bottom() >= 0 and rect.top() <= vp_height:
-                        line_y = float(rect.top()) + float(rect.height()) / 2.0
-                        painter.setPen(QPen(QColor("#48484a"), 1.2))
-                        painter.drawLine(QPointF(float(rect.left()), line_y), QPointF(float(vp_width - 24.0), line_y))
+            text = block.text()
 
-                # Checkbox (never paint inside a code block)
-                if block.userState() != 1:
-                    match = CHECKBOX_PATTERN.match(text)
-                    if match:
-                        indent, _, status, _ = match.groups()
-                        c = QTextCursor(block)
-                        c.setPosition(block.position() + len(indent))
-                        rect = self.cursorRect(c)
-                        if rect.top() > vp_height:
-                            break
-                        if rect.bottom() >= 0:
-                            self._draw_checkbox(painter, rect, status.lower() == "x")
+            # Horizontal rule (draw clean vector divider line)
+            if HR_RE.match(text):
+                if b_rect.bottom() >= 0:
+                    line_y = float(b_rect.top()) + float(b_rect.height()) / 2.0
+                    painter.setPen(QPen(QColor("#48484a"), 1.2))
+                    painter.drawLine(QPointF(float(b_rect.left()), line_y), QPointF(float(vp_width - 24.0), line_y))
+
+            # Blockquote vertical accent bars (for all quote lines, outside code blocks)
+            if block.userState() != 1 and ">" in text:
+                qm_bar = QUOTE_RE.match(text)
+                if qm_bar:
+                    prefix_bar = qm_bar.group(1)
+                    level_bar = prefix_bar.count(">")
+                    if level_bar > 0:
+                        c_s_b = QTextCursor(block)
+                        c_e_b = QTextCursor(block)
+                        c_e_b.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                        r_s_b = self.cursorRect(c_s_b)
+                        r_e_b = self.cursorRect(c_e_b)
+                        top_y = float(r_s_b.top())
+                        bot_y = float(r_e_b.bottom())
+
+                        if bot_y >= 0 and top_y <= vp_height:
+                            painter.save()
+                            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                            target_m = level_bar * 18.0 + 8.0
+                            base_x = float(r_s_b.left()) - target_m + 4.0
+                            for lvl in range(level_bar):
+                                bx = base_x + lvl * 18.0
+                                next_b = block.next()
+                                connects_next = False
+                                if next_b.isValid():
+                                    next_qm = QUOTE_RE.match(next_b.text())
+                                    if next_qm and next_qm.group(1).count(">") > lvl:
+                                        connects_next = True
+
+                                pen = QPen(QColor("#545462"), 2.6)
+                                if not connects_next:
+                                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                                painter.setPen(pen)
+                                y2 = bot_y + 1.0 if connects_next else bot_y - 1.0
+                                painter.drawLine(QPointF(bx, top_y + 1.0), QPointF(bx, y2))
+                            painter.restore()
+
+            # HTML <kbd> Keycaps (inactive lines, outside code blocks)
+            if "<kbd>" in text.lower() and b_num != active_bn and block.userState() != 1:
+                for km in HTML_KBD_RE.finditer(text):
+                    c_s = QTextCursor(block)
+                    c_s.setPosition(block.position() + km.start(2))
+                    c_e = QTextCursor(block)
+                    c_e.setPosition(block.position() + km.end(2))
+                    r_s = self.cursorRect(c_s)
+                    r_e = self.cursorRect(c_e)
+                    if r_s.bottom() >= 0 and r_s.top() <= vp_height:
+                        kw = float(r_e.left() - r_s.left())
+                        if kw > 0:
+                            k_rect = QRectF(float(r_s.left()) - 4.0, float(r_s.top()) + 1.5, kw + 8.0, float(r_s.height()) - 3.0)
+                            painter.save()
+                            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                            # 3D Bottom shadow edge
+                            painter.setPen(QPen(QColor("#18181e"), 1.2))
+                            painter.setBrush(QBrush(QColor("#222228")))
+                            painter.drawRoundedRect(k_rect, 4.0, 4.0)
+                            # Top keycap face
+                            top_rect = QRectF(k_rect.left(), k_rect.top(), k_rect.width(), k_rect.height() - 1.8)
+                            painter.setPen(QPen(QColor("#545464"), 1.0))
+                            painter.setBrush(QBrush(QColor("#2e2e38")))
+                            painter.drawRoundedRect(top_rect, 3.5, 3.5)
+                            # Key text
+                            kf = QFont("Cantarell", -1)
+                            kf.setPixelSize(12)
+                            kf.setWeight(QFont.Weight.Bold)
+                            painter.setFont(kf)
+                            painter.setPen(QColor("#f5f5f7"))
+                            painter.drawText(top_rect, int(Qt.AlignmentFlag.AlignCenter), km.group(2))
+                            painter.restore()
+
+            # Checkbox (never paint inside a code block)
+            if block.userState() != 1:
+                match = CHECKBOX_PATTERN.match(text)
+                if match:
+                    indent, _, status, _ = match.groups()
+                    c_cb = QTextCursor(block)
+                    c_cb.setPosition(block.position() + len(indent))
+                    rect = self.cursorRect(c_cb)
+                    if rect.bottom() >= 0:
+                        self._draw_checkbox(painter, rect, status.lower() == "x")
+                else:
+                    qm = QUOTE_RE.match(text)
+                    if qm:
+                        prefix = qm.group(1)
+                        inner_cb = CHECKBOX_PATTERN.match(text[len(prefix):])
+                        if inner_cb:
+                            indent, _, status, _ = inner_cb.groups()
+                            c_cb = QTextCursor(block)
+                            c_cb.setPosition(block.position() + len(prefix) + len(indent))
+                            rect = self.cursorRect(c_cb)
+                            if rect.bottom() >= 0:
+                                self._draw_checkbox(painter, rect, status.lower() == "x")
+
+            # Inactive Bullet list item (never inside code blocks or table regions, and not checkboxes)
+            if (
+                b_num != active_bn
+                and block.userState() != 1
+                and b_num not in self.highlighter._block_modes
+            ):
+                if not CHECKBOX_PATTERN.match(text):
+                    lm = LIST_RE.match(text)
+                    if lm:
+                        indent, marker, space, _ = lm.groups()
+                        if marker in ("-", "*", "+"):
+                            c_bl = QTextCursor(block)
+                            c_bl.setPosition(block.position() + len(indent))
+                            rect = self.cursorRect(c_bl)
+                            if rect.bottom() >= 0:
+                                self._draw_bullet(painter, rect, len(indent))
                     else:
                         qm = QUOTE_RE.match(text)
                         if qm:
                             prefix = qm.group(1)
-                            inner_cb = CHECKBOX_PATTERN.match(text[len(prefix):])
-                            if inner_cb:
-                                indent, _, status, _ = inner_cb.groups()
-                                c = QTextCursor(block)
-                                c.setPosition(block.position() + len(prefix) + len(indent))
-                                rect = self.cursorRect(c)
-                                if rect.top() > vp_height:
-                                    break
-                                if rect.bottom() >= 0:
-                                    self._draw_checkbox(painter, rect, status.lower() == "x")
+                            inner_text = text[len(prefix):]
+                            if not CHECKBOX_PATTERN.match(inner_text):
+                                ilm = LIST_RE.match(inner_text)
+                                if ilm:
+                                    l_indent, l_marker, l_sp, _ = ilm.groups()
+                                    if l_marker in ("-", "*", "+"):
+                                        c_bl = QTextCursor(block)
+                                        c_bl.setPosition(block.position() + len(prefix) + len(l_indent))
+                                        rect = self.cursorRect(c_bl)
+                                        if rect.bottom() >= 0:
+                                            self._draw_bullet(painter, rect, len(l_indent))
 
-                # Inactive Bullet list item (never inside code blocks or table regions, and not checkboxes)
-                if (
-                    b_num != active_bn
-                    and block.userState() != 1
-                    and b_num not in self.highlighter._block_modes
-                ):
-                    if not CHECKBOX_PATTERN.match(text):
-                        lm = LIST_RE.match(text)
-                        if lm:
-                            indent, marker, space, _ = lm.groups()
-                            if marker in ("-", "*", "+"):
-                                c = QTextCursor(block)
-                                c.setPosition(block.position() + len(indent))
-                                rect = self.cursorRect(c)
-                                if rect.bottom() >= 0 and rect.top() <= vp_height:
-                                    self._draw_bullet(painter, rect, len(indent))
-                        else:
-                            qm = QUOTE_RE.match(text)
-                            if qm:
-                                prefix = qm.group(1)
-                                inner_text = text[len(prefix):]
-                                if not CHECKBOX_PATTERN.match(inner_text):
-                                    ilm = LIST_RE.match(inner_text)
-                                    if ilm:
-                                        l_indent, l_marker, l_sp, _ = ilm.groups()
-                                        if l_marker in ("-", "*", "+"):
-                                            c = QTextCursor(block)
-                                            c.setPosition(block.position() + len(prefix) + len(l_indent))
-                                            rect = self.cursorRect(c)
-                                            if rect.bottom() >= 0 and rect.top() <= vp_height:
-                                                self._draw_bullet(painter, rect, len(l_indent))
-
-                # Inline Math on inactive regular blocks (never inside tables or code blocks)
-                if (
-                    b_num != active_bn
-                    and block.userState() != 1
-                    and b_num not in self.highlighter._block_modes
-                    and ("$" in text or "\\(" in text)
-                ):
-                    for m in INLINE_MATH_RE.finditer(text):
-                        expr = m.group(1) if m.group(1) is not None else m.group(2)
-                        c = QTextCursor(block)
-                        c.setPosition(block.position() + m.start())
-                        rect = self.cursorRect(c)
-                        if rect.bottom() >= 0 and rect.top() <= vp_height:
-                            pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
-                            log_h = pix.height() / pix.devicePixelRatio()
-                            py = float(rect.top()) + (rect.height() - log_h) / 2.0
-                            painter.drawPixmap(QPointF(float(rect.left()), py), pix)
+            # Inline Math on inactive regular blocks (never inside tables or code blocks)
+            if (
+                b_num != active_bn
+                and block.userState() != 1
+                and b_num not in self.highlighter._block_modes
+                and ("$" in text or "\\(" in text)
+            ):
+                for m in INLINE_MATH_RE.finditer(text):
+                    expr = m.group(1) if m.group(1) is not None else m.group(2)
+                    c_m = QTextCursor(block)
+                    c_m.setPosition(block.position() + m.start())
+                    rect = self.cursorRect(c_m)
+                    if rect.bottom() >= 0:
+                        pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
+                        log_h = pix.height() / pix.devicePixelRatio()
+                        py = float(rect.top()) + (rect.height() - log_h) / 2.0
+                        painter.drawPixmap(QPointF(float(rect.left()), py), pix)
 
             block = block.next()
 

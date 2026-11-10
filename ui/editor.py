@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
-from ui.highlighter import HR_RE, MarkdownHighlighter
+from ui.highlighter import HR_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from utils.code_engine import (
     render_code_card,
 )
@@ -225,7 +225,7 @@ class MarkdownEditor(QTextEdit):
             self._rendered_block_rects.append((cr.start_block, cr.end_block, card_rect))
             render_code_card(painter, card_rect, cr)
 
-        # 5. Render Checkboxes & Inactive Inline Math ($...$)
+        # 5. Render Checkboxes, Inactive Bullets & Inactive Inline Math ($...$)
         block = self.document().firstBlock()
         while block.isValid():
             if block.isVisible():
@@ -253,6 +253,52 @@ class MarkdownEditor(QTextEdit):
                             break
                         if rect.bottom() >= 0:
                             self._draw_checkbox(painter, rect, status.lower() == "x")
+                    else:
+                        qm = QUOTE_RE.match(text)
+                        if qm:
+                            prefix = qm.group(1)
+                            inner_cb = CHECKBOX_PATTERN.match(text[len(prefix):])
+                            if inner_cb:
+                                indent, _, status, _ = inner_cb.groups()
+                                c = QTextCursor(block)
+                                c.setPosition(block.position() + len(prefix) + len(indent))
+                                rect = self.cursorRect(c)
+                                if rect.top() > vp_height:
+                                    break
+                                if rect.bottom() >= 0:
+                                    self._draw_checkbox(painter, rect, status.lower() == "x")
+
+                # Inactive Bullet list item (never inside code blocks or table regions, and not checkboxes)
+                if (
+                    b_num != active_bn
+                    and block.userState() != 1
+                    and b_num not in self.highlighter._block_modes
+                ):
+                    if not CHECKBOX_PATTERN.match(text):
+                        lm = LIST_RE.match(text)
+                        if lm:
+                            indent, marker, space, _ = lm.groups()
+                            if marker in ("-", "*", "+"):
+                                c = QTextCursor(block)
+                                c.setPosition(block.position() + len(indent))
+                                rect = self.cursorRect(c)
+                                if rect.bottom() >= 0 and rect.top() <= vp_height:
+                                    self._draw_bullet(painter, rect, len(indent))
+                        else:
+                            qm = QUOTE_RE.match(text)
+                            if qm:
+                                prefix = qm.group(1)
+                                inner_text = text[len(prefix):]
+                                if not CHECKBOX_PATTERN.match(inner_text):
+                                    ilm = LIST_RE.match(inner_text)
+                                    if ilm:
+                                        l_indent, l_marker, l_sp, _ = ilm.groups()
+                                        if l_marker in ("-", "*", "+"):
+                                            c = QTextCursor(block)
+                                            c.setPosition(block.position() + len(prefix) + len(l_indent))
+                                            rect = self.cursorRect(c)
+                                            if rect.bottom() >= 0 and rect.top() <= vp_height:
+                                                self._draw_bullet(painter, rect, len(l_indent))
 
                 # Inline Math on inactive regular blocks (never inside tables or code blocks)
                 if (
@@ -275,6 +321,31 @@ class MarkdownEditor(QTextEdit):
             block = block.next()
 
         painter.end()
+
+    def _draw_bullet(self, painter: QPainter, cursor_rect: QRect, indent_len: int) -> None:
+        """Draw an Apple Notes-style vector bullet glyph (dot, ring, or square) at cursor_rect."""
+        level = max(0, indent_len // 2)
+        cx = float(cursor_rect.left()) + 4.5
+        cy = float(cursor_rect.top()) + float(cursor_rect.height()) / 2.0
+
+        if level == 0:
+            # Level 0: Solid circular bullet
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor("#0a84ff")))
+            painter.drawEllipse(QPointF(cx, cy), 3.0, 3.0)
+        elif level == 1:
+            # Level 1: Open ring bullet
+            pen = QPen(QColor("#0a84ff"), 1.6)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(cx, cy), 2.7, 2.7)
+        else:
+            # Level 2+: Solid square bullet
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor("#0a84ff")))
+            sq = 4.8
+            painter.drawRect(QRectF(cx - sq / 2.0, cy - sq / 2.0, sq, sq))
 
     def _draw_checkbox(self, painter: QPainter, cursor_rect: QRect, is_checked: bool) -> None:
         """Draw a rounded 14x14 checkbox and vector tick mark at the given cursor rect."""
@@ -312,13 +383,19 @@ class MarkdownEditor(QTextEdit):
             return None
 
         text = block.text()
+        prefix_len = 0
+        qm = QUOTE_RE.match(text)
+        if qm:
+            prefix_len = len(qm.group(1))
+            text = text[prefix_len:]
+
         match = CHECKBOX_PATTERN.match(text)
         if not match:
             return None
 
         indent, _, _, _ = match.groups()
         c = QTextCursor(block)
-        c.setPosition(block.position() + len(indent))
+        c.setPosition(block.position() + prefix_len + len(indent))
         rect = self.cursorRect(c)
         box_x = float(rect.left() + 3)
         box_y = float(rect.top()) + (rect.height() - 14.0) / 2.0
@@ -514,23 +591,48 @@ class MarkdownEditor(QTextEdit):
             self.viewport().update()
             return
 
-        # 1. Backspace right after a checkbox removes the entire checkbox prefix cleanly
-        if (
-            event.key() == Qt.Key.Key_Backspace
-            and not cursor.hasSelection()
-        ):
+        # 1. Backspace right after a checkbox or list marker removes prefix cleanly or unindents
+        if event.key() == Qt.Key.Key_Backspace and not cursor.hasSelection():
+            # Checkbox backspace
             cb_info = get_checkbox_info(line_text)
             if cb_info is not None:
                 _, _, prefix_end, _ = cb_info
                 if pos_in_block == prefix_end:
                     indent_len = len(line_text) - len(line_text.lstrip())
                     cursor.beginEditBlock()
-                    cursor.setPosition(block.position() + indent_len)
-                    cursor.setPosition(
-                        block.position() + prefix_end,
-                        QTextCursor.MoveMode.KeepAnchor,
-                    )
-                    cursor.removeSelectedText()
+                    if indent_len >= 2:
+                        c = QTextCursor(block)
+                        c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                        c.deleteChar()
+                        c.deleteChar()
+                    else:
+                        cursor.setPosition(block.position() + indent_len)
+                        cursor.setPosition(
+                            block.position() + prefix_end,
+                            QTextCursor.MoveMode.KeepAnchor,
+                        )
+                        cursor.removeSelectedText()
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
+
+            # Bullet / Ordered list backspace
+            list_m = LIST_RE.match(line_text)
+            if list_m:
+                indent, marker, space, _ = list_m.groups()
+                marker_end = len(indent) + len(marker) + len(space)
+                if pos_in_block == marker_end:
+                    cursor.beginEditBlock()
+                    if len(indent) >= 2:
+                        c = QTextCursor(block)
+                        c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                        c.deleteChar()
+                        c.deleteChar()
+                    else:
+                        c = QTextCursor(block)
+                        c.setPosition(block.position() + len(indent))
+                        c.setPosition(block.position() + marker_end, QTextCursor.MoveMode.KeepAnchor)
+                        c.removeSelectedText()
                     cursor.endEditBlock()
                     self.viewport().update()
                     return
@@ -563,14 +665,21 @@ class MarkdownEditor(QTextEdit):
             continuation = get_auto_continue_prefix(line_text)
             if continuation is not None:
                 if continuation == "":
-                    # Empty list/checkbox item -> remove marker and exit list
+                    # Empty list/checkbox item -> unindent by 2 spaces or terminate list
+                    indent_len = len(line_text) - len(line_text.lstrip())
                     cursor.beginEditBlock()
-                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                    cursor.movePosition(
-                        QTextCursor.MoveOperation.EndOfBlock,
-                        QTextCursor.MoveMode.KeepAnchor,
-                    )
-                    cursor.removeSelectedText()
+                    if indent_len >= 2:
+                        c = QTextCursor(block)
+                        c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                        c.deleteChar()
+                        c.deleteChar()
+                    else:
+                        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                        cursor.movePosition(
+                            QTextCursor.MoveOperation.EndOfBlock,
+                            QTextCursor.MoveMode.KeepAnchor,
+                        )
+                        cursor.removeSelectedText()
                     cursor.endEditBlock()
                     self.viewport().update()
                     return
@@ -588,33 +697,91 @@ class MarkdownEditor(QTextEdit):
                                 QTextCursor.MoveMode.KeepAnchor,
                             )
                             fix_cursor.insertText("[x]" if is_chk else "[ ]")
+                    # If splitting text and remainder starts with space, remove that space
+                    tail = line_text[pos_in_block:]
+                    if tail.startswith(" "):
+                        del_c = QTextCursor(cursor)
+                        del_c.deleteChar()
                     cursor.insertText("\n" + continuation)
                     cursor.endEditBlock()
                     self.ensureCursorVisible()
                     self.viewport().update()
                     return
 
-        # 4. Tab & Shift+Tab: Indent / unindent by 2 spaces
+        # 4. Tab & Shift+Tab: Smart indentation for lists, checkboxes, selections, and text
         if event.key() == Qt.Key.Key_Tab:
-            cursor.beginEditBlock()
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-                spaces_to_remove = 2 if line_text.startswith("  ") else (1 if line_text.startswith(" ") else 0)
-                if spaces_to_remove > 0:
+            is_shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            if cursor.hasSelection():
+                # Indent / unindent all blocks spanning the selection
+                start_pos = cursor.selectionStart()
+                end_pos = cursor.selectionEnd()
+                b_curr = self.document().findBlock(start_pos)
+                b_last = self.document().findBlock(end_pos)
+                if b_last.position() == end_pos and b_last.blockNumber() > b_curr.blockNumber():
+                    b_last = b_last.previous()
+
+                cursor.beginEditBlock()
+                while b_curr.isValid():
+                    b_text = b_curr.text()
+                    c = QTextCursor(b_curr)
+                    c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                    if is_shift:
+                        rem = 2 if b_text.startswith("  ") else (1 if b_text.startswith(" ") else 0)
+                        for _ in range(rem):
+                            c.deleteChar()
+                    else:
+                        c.insertText("  ")
+                    if b_curr.blockNumber() == b_last.blockNumber():
+                        break
+                    b_curr = b_curr.next()
+                cursor.endEditBlock()
+                self.viewport().update()
+                return
+            else:
+                is_list_or_cb = (
+                    LIST_RE.match(line_text) is not None
+                    or CHECKBOX_PATTERN.match(line_text) is not None
+                )
+                if is_list_or_cb:
+                    # Indent or unindent the entire list/checkbox line at start of block
+                    cursor.beginEditBlock()
                     c = QTextCursor(block)
                     c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                    for _ in range(spaces_to_remove):
-                        c.deleteChar()
-            else:
-                cursor.insertText("  ")
-            cursor.endEditBlock()
-            self.viewport().update()
-            return
+                    if is_shift:
+                        rem = 2 if line_text.startswith("  ") else (1 if line_text.startswith(" ") else 0)
+                        for _ in range(rem):
+                            c.deleteChar()
+                    else:
+                        c.insertText("  ")
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
+                else:
+                    cursor.beginEditBlock()
+                    if is_shift:
+                        rem = 2 if line_text.startswith("  ") else (1 if line_text.startswith(" ") else 0)
+                        if rem > 0:
+                            c = QTextCursor(block)
+                            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                            for _ in range(rem):
+                                c.deleteChar()
+                    else:
+                        cursor.insertText("  ")
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
 
         super().keyPressEvent(event)
 
     def _toggle_checkbox_at_block(self, block: QTextBlock) -> None:
         """Atomically toggle '[ ]' / '[]' <-> '[x]' in the given text block."""
         text = block.text()
+        prefix_len = 0
+        qm = QUOTE_RE.match(text)
+        if qm:
+            prefix_len = len(qm.group(1))
+            text = text[prefix_len:]
+
         info = get_checkbox_info(text)
         if info is None:
             return
@@ -624,9 +791,9 @@ class MarkdownEditor(QTextEdit):
 
         edit_cursor = QTextCursor(self.document())
         edit_cursor.beginEditBlock()
-        edit_cursor.setPosition(block.position() + bracket_start)
+        edit_cursor.setPosition(block.position() + prefix_len + bracket_start)
         edit_cursor.setPosition(
-            block.position() + max(bracket_end, prefix_end),
+            block.position() + prefix_len + max(bracket_end, prefix_end),
             QTextCursor.MoveMode.KeepAnchor,
         )
         edit_cursor.insertText(replacement)

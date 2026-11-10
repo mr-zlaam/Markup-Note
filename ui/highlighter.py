@@ -39,7 +39,7 @@ from utils.table import (
 HEADING_RE = re.compile(r"^(#{1,6})(\s+)(.*)$")
 CHECKBOX_RE = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
 QUOTE_RE = re.compile(r"^((?:>\s*)+)(.*)$")
-LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
+LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.|\d+\))(\s+)(.*)$")
 HR_RE = re.compile(r"^(?:(?:\s*\*){3,}|\s*(?:-\s*){3,}|\s*(?:_\s*){3,})\s*$")
 FENCE_RE = re.compile(r"^\s*(?:>+\s*)*```.*$")
 
@@ -144,6 +144,15 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.list_marker_format = QTextCharFormat()
         self.list_marker_format.setForeground(QColor("#0a84ff"))
         self.list_marker_format.setFontWeight(QFont.Weight.Bold)
+
+        # Bullet hide format (transparent on inactive lines so vector bullet dot is drawn)
+        self.bullet_hide_format = QTextCharFormat()
+        self.bullet_hide_format.setForeground(QColor(0, 0, 0, 0))
+
+        # Ordered list number format (Apple Notes blue / bold)
+        self.ordered_list_format = QTextCharFormat()
+        self.ordered_list_format.setForeground(QColor("#0a84ff"))
+        self.ordered_list_format.setFontWeight(QFont.Weight.Bold)
 
         # Checkboxes (transparent fixed-width prefix at full line height so paintEvent draws the custom box)
         self.checkbox_prefix_format = QTextCharFormat()
@@ -407,19 +416,47 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             else:
                 self._format(text, 0, len(prefix), self.hidden_format)
 
-            # Check if content inside blockquote is a list
+            # Check if content inside blockquote is a checkbox or a list
             inner_text = text[len(prefix):]
-            inner_list = LIST_RE.match(inner_text)
-            if inner_list:
-                l_indent, l_marker, l_sp, _ = inner_list.groups()
-                m_start = len(prefix) + len(l_indent)
-                self._format(text, m_start, len(l_marker) + len(l_sp), self.list_marker_format)
+            inner_cb = CHECKBOX_RE.match(inner_text)
+            if inner_cb:
+                l_indent, l_prefix, l_status, _ = inner_cb.groups()
+                p_start = len(prefix) + len(l_indent)
+                self._format(text, p_start, len(l_prefix), self.checkbox_prefix_format)
+                if l_status.lower() == "x":
+                    t_start = p_start + len(l_prefix)
+                    self._format(text, t_start, len(text) - t_start, self.checked_task_format)
+            else:
+                inner_list = LIST_RE.match(inner_text)
+                if inner_list:
+                    l_indent, l_marker, l_sp, _ = inner_list.groups()
+                    m_start = len(prefix) + len(l_indent)
+                    if l_marker in ("-", "*", "+"):
+                        if is_active:
+                            self._format(text, m_start, len(l_marker), self.list_marker_format)
+                            self._format(text, m_start + len(l_marker), len(l_sp), self.marker_format)
+                        else:
+                            self._format(text, m_start, len(l_marker), self.bullet_hide_format)
+                    else:
+                        self._format(text, m_start, len(l_marker), self.ordered_list_format)
+                        if is_active:
+                            self._format(text, m_start + len(l_marker), len(l_sp), self.marker_format)
 
         # 6. Standard Bullet / Numbered Lists (- item, 1. item)
         list_match = LIST_RE.match(text) if not (h_match or cb_match or q_match) else None
         if list_match:
             indent, marker, space, _ = list_match.groups()
-            self._format(text, len(indent), len(marker) + len(space), self.list_marker_format)
+            m_start = len(indent)
+            if marker in ("-", "*", "+"):
+                if is_active:
+                    self._format(text, m_start, len(marker), self.list_marker_format)
+                    self._format(text, m_start + len(marker), len(space), self.marker_format)
+                else:
+                    self._format(text, m_start, len(marker), self.bullet_hide_format)
+            else:
+                self._format(text, m_start, len(marker), self.ordered_list_format)
+                if is_active:
+                    self._format(text, m_start + len(marker), len(space), self.marker_format)
 
         # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), $math$, HTML, #tag)
         self._apply_inline_rules(text, is_active, base_point_size, base_bold, base_color)

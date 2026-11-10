@@ -81,9 +81,14 @@
   * Delimiters: standard LaTeX `\[ ... \]` / `\\[ ... \\]` (display) and `\( ... \)` / `\\( ... \\)` (inline) in addition to `$$...$$` and `$..$`.
   * `\boxed{...}` equation borders, `\mathbf{...}` bold glyphs/vectors, `bmatrix`, `pmatrix`, `vmatrix`.
   * Fractions, roots, subscripts/superscripts, unescaped markdown subscripts (`\_`), Greek symbols, and big operators (`∑`, `∫`, `∏`, `lim`).
-* 🟢 **`[Completed]`** **Advanced Markdown: Mermaid Diagrams (`utils/mermaid_engine.py`):**
-  * Native pure-Python vector renderer for Flowcharts/Graphs (`graph TD`/`LR`), Sequence Diagrams, State Diagrams, and Pie Charts.
-  * Cursor-aware editing: collapses to vector preview on inactive blocks, reveals raw markdown for editing when clicked.
+* 🟢 **`[Completed]`** **Bullet Lists & Ordered Lists Hierarchy & Navigation:**
+  * Cursor-aware Live Preview: Inactive bullet items render as vector bullet glyphs (`•` solid circle at level 0, `◦` hollow ring at level 1, `▪` solid square at level 2+) rather than raw ASCII hyphens.
+  * Reveals raw markdown (`- `, `* `, `+ `) in bold blue (`#0a84ff`) when cursor is placed on the line.
+  * Ordered lists (`1. `, `2) `) cleanly styled with bold Apple blue markers (`#0a84ff`).
+  * Smart `Tab` / `Shift+Tab`: Indents / unindents list and checkbox lines by 2 spaces at the start of the block; also handles multi-line selections.
+  * Smart `Enter`: Auto-continues bullets and auto-increments numbered lists (`1.` -> `2.`, `1)` -> `2)`); unindents indented items when empty and terminates top-level empty items to exit cleanly.
+  * Smart `Backspace`: When pressed right after empty marker (`- `, `1. `), deletes marker or unindents.
+  * Full nesting and hierarchy support inside blockquotes (`> - item`, `> 1. item`).
 
 ---
 

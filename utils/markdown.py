@@ -4,7 +4,7 @@ import re
 from typing import Optional, Tuple
 
 CHECKBOX_PATTERN = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
-LIST_PATTERN = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
+LIST_PATTERN = re.compile(r"^(\s*)([-*+]|\d+\.|\d+\))(\s+)(.*)$")
 LINK_PATTERN = re.compile(
     r"\[(?P<label>[^\]]+)\]\((?P<url>[^\s)]+)\)|<(?P<autourl>https?://[^\s>]+)>|(?P<rawurl>https?://[^\s<>\)\]]+)"
 )
@@ -82,9 +82,10 @@ def get_auto_continue_prefix(line: str) -> Optional[str]:
         if not rest.strip():
             # Empty list item -> terminate list
             return ""
-        if marker.isdigit() or marker.endswith("."):
+        if marker[:-1].isdigit() and (marker.endswith(".") or marker.endswith(")")):
             num = int(marker[:-1])
-            return f"{indent}{num + 1}. "
+            delim = marker[-1]
+            return f"{indent}{num + 1}{delim} "
         return f"{indent}{marker}{space}"
 
     return None

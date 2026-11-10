@@ -95,6 +95,13 @@
   * Smart `Enter`: Auto-continues bullets and auto-increments numbered lists (`1.` -> `2.`, `1)` -> `2)`); unindents indented items when empty and terminates top-level empty items to exit cleanly.
   * Smart `Backspace`: When pressed right after empty marker (`- `, `1. `), deletes marker or unindents.
   * Full nesting and hierarchy support inside blockquotes (`> - item`, `> 1. item`).
+* 🟢 **`[Completed]`** **Double-Click Block Editing & State Bleed Isolation:**
+  * Fixed closing fence state bleed: Closing fences (` ``` `) strictly force syntax highlighter block state to 0, eliminating monospace font and dark background bleed into subsequent headings and paragraphs.
+  * Preview card stability: Single clicking inside rendered cards (tables, code blocks, math, diagrams) does not disrupt layout or expand raw Markdown.
+  * Double-click to edit: Double-clicking any rendered preview card smoothly activates inline Markdown editing at the cursor position.
+  * Code card `[Edit]` button: Added an `[Edit]` button in the code card header bar next to `[Copy]` for direct one-click editing.
+  * `Escape` key exit: Pressing `Escape` when inside any active code, table, math, or mermaid block exits edit mode and immediately re-collapses back to the rendered card.
+  * Hover feedback: Shows pointing hand cursor and "Double-click to edit" or "Edit code block" tooltip on hover.
 
 ---
 

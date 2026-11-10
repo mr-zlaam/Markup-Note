@@ -37,6 +37,7 @@ from utils.code_engine import (
     CodeRegion,
     get_code_content_width,
     get_code_copy_button_rect,
+    get_code_edit_button_rect,
     get_code_scrollbar_geometry,
     render_code_card,
 )
@@ -104,6 +105,7 @@ class MarkdownEditor(QTextEdit):
         self._code_scroll_x: dict[int, float] = {}
         self._scrollbar_drag: Optional[tuple[str, int, float, float, float, float, float]] = None
         self._hovered_copy_btn: Optional[int] = None
+        self._hovered_edit_btn: Optional[int] = None
         self._copied_code_block: Optional[int] = None
         self._copied_timer = QTimer(self)
         self._copied_timer.setSingleShot(True)
@@ -273,14 +275,16 @@ class MarkdownEditor(QTextEdit):
             self._rendered_block_rects.append((cr.start_block, cr.end_block, card_rect))
             scroll_x = self._code_scroll_x.get(cr.start_block, 0.0)
             is_copied = self._copied_code_block == cr.start_block
-            is_hovered = self._hovered_copy_btn == cr.start_block
+            is_copy_hovered = self._hovered_copy_btn == cr.start_block
+            is_edit_hovered = self._hovered_edit_btn == cr.start_block
             render_code_card(
                 painter,
                 card_rect,
                 cr,
                 scroll_x=scroll_x,
                 is_copied=is_copied,
-                is_copy_hovered=is_hovered,
+                is_copy_hovered=is_copy_hovered,
+                is_edit_hovered=is_edit_hovered,
             )
 
         # 5. Render Checkboxes, Inactive Bullets & Inactive Inline Math ($...$)
@@ -530,6 +534,25 @@ class MarkdownEditor(QTextEdit):
         if old_hovered_copy is not None:
             self.viewport().update()
 
+        # Check if hovering over Code Edit button
+        old_hovered_edit = self._hovered_edit_btn
+        self._hovered_edit_btn = None
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    edit_btn = get_code_edit_button_rect(card_rect)
+                    if edit_btn.contains(pos):
+                        self._hovered_edit_btn = cr.start_block
+                        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+                        QToolTip.showText(event.globalPosition().toPoint(), "Edit code block", self.viewport())
+                        if old_hovered_edit != self._hovered_edit_btn:
+                            self.viewport().update()
+                        return
+
+        if old_hovered_edit is not None:
+            self.viewport().update()
+
         # Check if hovering over table scrollbar
         for tr in self.highlighter.table_regions:
             if not (tr.start_block <= active_bn <= tr.end_block):
@@ -556,13 +579,16 @@ class MarkdownEditor(QTextEdit):
                         QToolTip.hideText()
                         return
 
-        # Checkboxes and preview cards
-        if (
-            self._checkbox_block_at_pos(pos) is not None
-            or self._region_at_pos(pos) is not None
-        ):
+        # Checkboxes
+        if self._checkbox_block_at_pos(pos) is not None:
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             QToolTip.hideText()
+            return
+
+        # Inactive preview card hover (prompt double click to edit)
+        if self._region_at_pos(pos) is not None:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            QToolTip.showText(event.globalPosition().toPoint(), "Double-click to edit", self.viewport())
             return
 
         link_info = self._link_at_pos(pos)
@@ -580,7 +606,7 @@ class MarkdownEditor(QTextEdit):
         QToolTip.hideText()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle clicking directly on checkboxes, copy buttons, scrollbars, preview cards, or Ctrl+Click on links."""
+        """Handle clicking directly on checkboxes, buttons, scrollbars, or Ctrl+Click on links."""
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
             active_bn = self.highlighter.active_block_number
@@ -607,7 +633,25 @@ class MarkdownEditor(QTextEdit):
                             self.viewport().update()
                             return
 
-            # 2. Click on Code Card Scrollbar
+            # 2. Click on Code Card Edit button
+            for cr in self.highlighter.code_regions:
+                if not (cr.start_block <= active_bn <= cr.end_block):
+                    card_rect = self._get_code_card_rect(cr)
+                    if card_rect is not None and card_rect.contains(pos):
+                        edit_btn = get_code_edit_button_rect(card_rect)
+                        if edit_btn.contains(pos):
+                            target_block = self.document().findBlockByNumber(cr.start_block + 1)
+                            if not target_block.isValid():
+                                target_block = self.document().findBlockByNumber(cr.start_block)
+                            if target_block.isValid():
+                                c = QTextCursor(target_block)
+                                c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                                self.setTextCursor(c)
+                                self.ensureCursorVisible()
+                                self.viewport().update()
+                                return
+
+            # 3. Click on Code Card Scrollbar
             for cr in self.highlighter.code_regions:
                 if not (cr.start_block <= active_bn <= cr.end_block):
                     card_rect = self._get_code_card_rect(cr)
@@ -629,7 +673,7 @@ class MarkdownEditor(QTextEdit):
                                 self._scrollbar_drag = ("code", cr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
                                 return
 
-            # 3. Click on Table Scrollbar
+            # 4. Click on Table Scrollbar
             for tr in self.highlighter.table_regions:
                 if not (tr.start_block <= active_bn <= tr.end_block):
                     tbl_rect = self._get_table_rect(tr)
@@ -651,13 +695,22 @@ class MarkdownEditor(QTextEdit):
                                 self._scrollbar_drag = ("table", tr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
                                 return
 
-            # 4. Checkbox click -> toggle
+            # 5. Checkbox click -> toggle
             block = self._checkbox_block_at_pos(pos)
             if block is not None:
                 self._toggle_checkbox_at_block(block)
                 return
 
-            # 5. Rendered preview card click -> place cursor inside to edit
+            # Single click on rendered card does NOT blow up the card; double-click is required
+            if self._region_at_pos(pos) is not None:
+                return
+
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Double-click on any rendered card to enter inline Markdown editing."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
             reg = self._region_at_pos(pos)
             if reg is not None:
                 s_blk, _, _ = reg
@@ -668,9 +721,11 @@ class MarkdownEditor(QTextEdit):
                     c = QTextCursor(target_block)
                     c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
                     self.setTextCursor(c)
+                    self.ensureCursorVisible()
+                    self.viewport().update()
                     return
 
-        super().mousePressEvent(event)
+        super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """Finish any active scrollbar dragging."""
@@ -724,11 +779,33 @@ class MarkdownEditor(QTextEdit):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Handle Ctrl+Enter checkbox toggling, smart list continuation, and Tab indentation."""
+        """Handle Escape exit, Ctrl+Enter toggling, smart list continuation, and Tab indentation."""
         cursor = self.textCursor()
         block = cursor.block()
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
+
+        # Escape key: exit active card editing mode and re-collapse back into rendered card
+        if event.key() == Qt.Key.Key_Escape:
+            b_num = block.blockNumber()
+            for r_list in (
+                self.highlighter.code_regions,
+                self.highlighter.table_regions,
+                self.highlighter.math_regions,
+                self.highlighter.mermaid_regions,
+            ):
+                for r in r_list:
+                    if r.start_block <= b_num <= r.end_block:
+                        next_b = self.document().findBlockByNumber(r.end_block + 1)
+                        if not next_b.isValid():
+                            next_b = self.document().findBlockByNumber(r.start_block - 1)
+                        if next_b.isValid():
+                            c = QTextCursor(next_b)
+                            c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                            self.setTextCursor(c)
+                            self.ensureCursorVisible()
+                            self.viewport().update()
+                            return
 
         # Check if inside a table row
         if is_table_row(line_text):

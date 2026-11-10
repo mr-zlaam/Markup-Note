@@ -184,6 +184,16 @@ def get_code_copy_button_rect(card_rect: QRectF) -> QRectF:
     return QRectF(btn_x, btn_y, btn_w, btn_h)
 
 
+def get_code_edit_button_rect(card_rect: QRectF) -> QRectF:
+    """Return the QRectF of the Edit button in the code card header."""
+    header_h = 28.0
+    btn_w = 48.0
+    btn_h = 20.0
+    btn_x = card_rect.right() - 58.0 - 10.0 - btn_w - 6.0
+    btn_y = card_rect.top() + (header_h - btn_h) / 2.0
+    return QRectF(btn_x, btn_y, btn_w, btn_h)
+
+
 def render_code_card(
     painter: QPainter,
     card_rect: QRectF,
@@ -191,8 +201,9 @@ def render_code_card(
     scroll_x: float = 0.0,
     is_copied: bool = False,
     is_copy_hovered: bool = False,
+    is_edit_hovered: bool = False,
 ) -> None:
-    """Render a rounded code card container with macOS dots, copy button, and horizontal scrolling."""
+    """Render a rounded code card container with macOS dots, edit/copy buttons, and horizontal scrolling."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -228,6 +239,11 @@ def render_code_card(
         painter.setBrush(col)
         painter.drawEllipse(QPointF(card_rect.left() + dx, card_rect.top() + 14.0), 4.2, 4.2)
 
+    btn_font = QFont("Cantarell", -1)
+    btn_font.setPixelSize(11)
+    btn_font.setWeight(QFont.Weight.DemiBold)
+    painter.setFont(btn_font)
+
     # 4. Copy Button on header right
     copy_btn_rect = get_code_copy_button_rect(card_rect)
     if is_copied:
@@ -238,10 +254,6 @@ def render_code_card(
         painter.setBrush(QBrush(QColor("#2c2c36") if is_copy_hovered else QColor("#22222a")))
     painter.drawRoundedRect(copy_btn_rect, 4.0, 4.0)
 
-    btn_font = QFont("Cantarell", -1)
-    btn_font.setPixelSize(11)
-    btn_font.setWeight(QFont.Weight.DemiBold)
-    painter.setFont(btn_font)
     if is_copied:
         painter.setPen(QColor("#30d158"))
     else:
@@ -252,14 +264,27 @@ def render_code_card(
         "Copied!" if is_copied else "Copy",
     )
 
-    # 5. Language badge (left of copy button)
+    # 5. Edit Button on header (left of copy button)
+    edit_btn_rect = get_code_edit_button_rect(card_rect)
+    painter.setPen(QPen(QColor("#545462") if is_edit_hovered else QColor("#383842"), 1.0))
+    painter.setBrush(QBrush(QColor("#2c2c36") if is_edit_hovered else QColor("#22222a")))
+    painter.drawRoundedRect(edit_btn_rect, 4.0, 4.0)
+
+    painter.setPen(QColor("#ffffff") if is_edit_hovered else QColor("#a6a6b0"))
+    painter.drawText(
+        edit_btn_rect,
+        int(Qt.AlignmentFlag.AlignCenter),
+        "Edit",
+    )
+
+    # 6. Language badge (left of edit button)
     badge_name = region.language.upper() if region.language else "CODE"
     badge_font = QFont("Cantarell", -1)
     badge_font.setPixelSize(11)
     badge_font.setWeight(QFont.Weight.Bold)
     painter.setFont(badge_font)
     painter.setPen(QColor("#8e8e93"))
-    badge_rect = QRectF(copy_btn_rect.left() - 90.0, card_rect.top(), 82.0, header_h)
+    badge_rect = QRectF(edit_btn_rect.left() - 90.0, card_rect.top(), 82.0, header_h)
     painter.drawText(
         badge_rect,
         int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),

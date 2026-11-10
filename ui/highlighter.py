@@ -312,8 +312,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 return
 
             if mode in ("inactive_math", "inactive_mermaid", "inactive_code"):
-                is_closing_code = mode == "inactive_code" and any(cr.end_block == block_num for cr in self.code_regions)
-                self.setCurrentBlockState(0 if is_closing_code else (1 if mode == "inactive_code" else 0))
+                self.setCurrentBlockState(0)
                 if len(text) > 0:
                     self.setFormat(0, len(text), self.hidden_format)
                     tall_fmt = QTextCharFormat()
@@ -328,7 +327,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 return
 
             if mode == "active_code":
-                self.setCurrentBlockState(1)
+                is_closing_code = any(cr.end_block == block_num for cr in self.code_regions) or (
+                    any(cr.start_block < block_num <= cr.end_block for cr in self.code_regions)
+                    and FENCE_RE.match(text) is not None
+                )
+                self.setCurrentBlockState(0 if is_closing_code else 1)
                 if FENCE_RE.match(text):
                     self.setFormat(0, len(text), self.marker_format)
                 else:

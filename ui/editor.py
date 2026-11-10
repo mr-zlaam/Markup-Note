@@ -3,7 +3,7 @@
 import re
 from typing import Optional
 
-from PyQt6.QtCore import QRect, QRectF, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, QRectF, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -60,6 +60,10 @@ class MarkdownEditor(QTextEdit):
         # Attach cursor-aware Obsidian syntax highlighter
         self.highlighter = MarkdownHighlighter(self.document())
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
+
+        # Enable mouse tracking so hovering over checkboxes shows a pointer cursor
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
 
     def _on_cursor_position_changed(self) -> None:
         """Rehighlight the previous and current lines when the cursor moves between lines."""
@@ -132,28 +136,45 @@ class MarkdownEditor(QTextEdit):
             painter.setBrush(QBrush(QColor("#262629")))
             painter.drawRoundedRect(box_rect, 3.5, 3.5)
 
+    def _checkbox_block_at_pos(self, pos: QPointF) -> Optional[QTextBlock]:
+        """Return the QTextBlock if the viewport position is over a painted checkbox."""
+        cursor = self.cursorForPosition(pos.toPoint())
+        block = cursor.block()
+        if not block.isValid():
+            return None
+
+        text = block.text()
+        match = CHECKBOX_PATTERN.match(text)
+        if not match:
+            return None
+
+        indent, _, _, _ = match.groups()
+        c = QTextCursor(block)
+        c.setPosition(block.position() + len(indent))
+        rect = self.cursorRect(c)
+        box_x = float(rect.left() + 3)
+        box_y = float(rect.top()) + (rect.height() - 14.0) / 2.0
+        hit_rect = QRectF(box_x - 3.0, box_y - 3.0, 20.0, 20.0)
+
+        if hit_rect.contains(pos):
+            return block
+        return None
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Show a pointing hand cursor when hovering over a checkbox."""
+        super().mouseMoveEvent(event)
+        if self._checkbox_block_at_pos(event.position()) is not None:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle clicking directly on graphical checkboxes to toggle their state."""
         if event.button() == Qt.MouseButton.LeftButton:
-            cursor = self.cursorForPosition(event.pos())
-            block = cursor.block()
-            text = block.text()
-            match = CHECKBOX_PATTERN.match(text)
-
-            if match:
-                indent, prefix, _, _ = match.groups()
-                prefix_end = len(indent) + len(prefix)
-                c = QTextCursor(block)
-                c.setPosition(block.position() + len(indent))
-                rect = self.cursorRect(c)
-                box_x = float(rect.left() + 2)
-                box_y = float(rect.top()) + (rect.height() - 16.0) / 2.0
-                hit_rect = QRectF(box_x - 4.0, box_y - 4.0, 24.0, 24.0)
-
-                char_idx = cursor.positionInBlock()
-                if hit_rect.contains(event.position()) or (len(indent) <= char_idx < prefix_end):
-                    self._toggle_checkbox_at_block(block)
-                    return
+            block = self._checkbox_block_at_pos(event.position())
+            if block is not None:
+                self._toggle_checkbox_at_block(block)
+                return
 
         super().mousePressEvent(event)
 
@@ -383,6 +404,12 @@ class EditorPanel(QWidget):
     def _update_word_count(self) -> None:
         words = len(self.editor.toPlainText().split())
         self.word_count_label.setText(f"{words} words")
+
+    def flush_pending_save(self) -> None:
+        """Immediately flush any pending debounced save before application exit."""
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._trigger_auto_save()
 
     def _trigger_auto_save(self) -> None:
         """Emit save signal with latest Markdown text."""

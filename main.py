@@ -1,6 +1,11 @@
 """Application entry point for Note Taker."""
 
+import signal
 import sys
+from types import FrameType
+from typing import Optional
+
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
@@ -8,7 +13,7 @@ from ui.theme import apply_theme
 
 
 def main() -> None:
-    """Launch the Note Taker application."""
+    """Launch the Note Taker application with clean Ctrl+C terminal signal handling."""
     app = QApplication(sys.argv)
     app.setApplicationName("Note Taker")
     app.setOrganizationName("NoteTaker")
@@ -18,6 +23,19 @@ def main() -> None:
 
     window = MainWindow()
     window.show()
+
+    def _handle_sigint(signum: int, frame: Optional[FrameType]) -> None:
+        window.flush_pending_save()
+        app.quit()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+    signal.signal(signal.SIGTERM, _handle_sigint)
+
+    # Periodic no-op timer wakes the Python interpreter from Qt's C++ event loop
+    # so Ctrl+C (SIGINT) in the terminal is processed immediately.
+    sig_timer = QTimer()
+    sig_timer.start(150)
+    sig_timer.timeout.connect(lambda: None)
 
     sys.exit(app.exec())
 

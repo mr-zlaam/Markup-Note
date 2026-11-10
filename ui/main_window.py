@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PyQt6.QtCore import QFileSystemWatcher, QTimer, Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
 from core.note import Note
@@ -83,6 +83,10 @@ class MainWindow(QMainWindow):
         # Delete Note (Ctrl+D)
         delete_sc = QShortcut(QKeySequence("Ctrl+D"), self)
         delete_sc.activated.connect(self._on_delete_note)
+
+        # Quit Application (Ctrl+Q)
+        quit_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
+        quit_sc.activated.connect(self.close)
 
     def _load_initial_data(self) -> None:
         """Load folders and notes on launch."""
@@ -249,3 +253,12 @@ class MainWindow(QMainWindow):
             # Restore sidebar
             restore_w = getattr(self, "_previous_sidebar_width", 190)
             self.splitter.setSizes([restore_w, sizes[1] - restore_w, sizes[2]])
+
+    def flush_pending_save(self) -> None:
+        """Flush any unsaved debounced editor changes immediately."""
+        self.editor.flush_pending_save()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Ensure any pending note edits are saved before the window closes."""
+        self.flush_pending_save()
+        super().closeEvent(event)

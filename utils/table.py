@@ -259,21 +259,13 @@ def find_prev_cell_pos(line: str, pos_in_block: int) -> Optional[int]:
     return min(prev_pipe + 2, pipes[current_cell_start_pipe])
 
 
-def render_table(
-    painter: QPainter,
-    table_rect: QRectF,
+def get_table_column_widths(
     region: TableRegion,
     base_font: QFont,
-) -> List[Tuple[int, int, QRectF]]:
-    """Draw a styled vector table inside table_rect and return [(block_num, col_idx, cell_rect)]."""
-    painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
+    container_width: float,
+) -> Tuple[float, List[float]]:
+    """Compute (content_width, col_widths) based on text content without artificial truncation."""
     num_cols = max(1, len(region.headers))
-    total_rows = 1 + len(region.rows)
-    row_height = table_rect.height() / max(1, total_rows)
-
-    # Calculate proportional column widths based on text content
     header_font = QFont(base_font)
     header_font.setWeight(QFont.Weight.Bold)
     body_font = QFont(base_font)
@@ -283,70 +275,116 @@ def render_table(
     natural_widths: List[float] = []
     for c_idx in range(num_cols):
         h_text = clean_cell_text(region.headers[c_idx])
-        h_w = fm_h.horizontalAdvance(h_text) + 24.0
-        col_w = max(70.0, h_w)
+        h_w = fm_h.horizontalAdvance(h_text) + 28.0
+        col_w = max(80.0, h_w)
         for _, r_cells in region.rows:
             if c_idx < len(r_cells):
                 c_text = clean_cell_text(r_cells[c_idx])
-                col_w = max(col_w, min(240.0, fm_b.horizontalAdvance(c_text) + 24.0))
+                col_w = max(col_w, fm_b.horizontalAdvance(c_text) + 28.0)
         natural_widths.append(col_w)
 
     total_natural = sum(natural_widths)
-    target_w = max(table_rect.width(), total_natural)
-    col_widths = [(w / total_natural) * target_w for w in natural_widths]
+    if total_natural <= container_width:
+        col_widths = [(w / total_natural) * container_width for w in natural_widths]
+        return container_width, col_widths
+    else:
+        return total_natural, natural_widths
 
-    actual_rect = QRectF(table_rect.left(), table_rect.top(), target_w, table_rect.height())
 
-    # Outer table card background & border
+def get_table_scrollbar_geometry(
+    table_rect: QRectF, content_width: float, scroll_x: float
+) -> Optional[Tuple[QRectF, QRectF, float]]:
+    """Return (track_rect, thumb_rect, max_scroll) if table content is wider than container."""
+    if content_width <= table_rect.width() + 1.0:
+        return None
+    max_scroll = content_width - table_rect.width()
+    clamped_scroll = max(0.0, min(scroll_x, max_scroll))
+    track_h = 5.0
+    track_y = table_rect.bottom() - track_h - 2.0
+    track_rect = QRectF(table_rect.left() + 8.0, track_y, max(10.0, table_rect.width() - 16.0), track_h)
+    track_w = track_rect.width()
+    thumb_w = max(36.0, min(track_w, track_w * (table_rect.width() / content_width)))
+    scroll_range = max(1.0, track_w - thumb_w)
+    thumb_x = track_rect.left() + (clamped_scroll / max_scroll) * scroll_range
+    thumb_rect = QRectF(thumb_x, track_y, thumb_w, track_h)
+    return track_rect, thumb_rect, max_scroll
+
+
+def render_table(
+    painter: QPainter,
+    table_rect: QRectF,
+    region: TableRegion,
+    base_font: QFont,
+    scroll_x: float = 0.0,
+) -> List[Tuple[int, int, QRectF]]:
+    """Draw a styled vector table inside table_rect with horizontal scrolling support."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    num_cols = max(1, len(region.headers))
+    total_rows = 1 + len(region.rows)
+    row_height = table_rect.height() / max(1, total_rows)
+
+    header_font = QFont(base_font)
+    header_font.setWeight(QFont.Weight.Bold)
+    body_font = QFont(base_font)
+
+    content_w, col_widths = get_table_column_widths(region, base_font, table_rect.width())
+    max_scroll = max(0.0, content_w - table_rect.width())
+    clamped_scroll = max(0.0, min(scroll_x, max_scroll))
+
+    # Outer table card background
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QBrush(QColor("#202024")))
-    painter.drawRoundedRect(actual_rect, 6.0, 6.0)
+    painter.drawRoundedRect(table_rect, 6.0, 6.0)
 
-    # Header background (top rounded)
-    header_rect = QRectF(actual_rect.left(), actual_rect.top(), target_w, row_height)
+    # Header background across visible width
+    header_rect = QRectF(table_rect.left(), table_rect.top(), table_rect.width(), row_height)
     painter.setBrush(QBrush(QColor("#2a2a30")))
     painter.drawRoundedRect(header_rect, 6.0, 6.0)
     if len(region.rows) > 0:
-        # Square off bottom corners of header
         painter.drawRect(
-            QRectF(actual_rect.left(), actual_rect.top() + row_height - 6.0, target_w, 6.0)
+            QRectF(table_rect.left(), table_rect.top() + row_height - 6.0, table_rect.width(), 6.0)
         )
 
-    hit_cells: List[Tuple[int, int, QRectF]] = []
-
-    # Draw alternating row backgrounds
+    # Alternating row backgrounds across visible width
     for r_idx in range(len(region.rows)):
-        y = actual_rect.top() + (r_idx + 1) * row_height
-        r_rect = QRectF(actual_rect.left(), y, target_w, row_height)
+        y = table_rect.top() + (r_idx + 1) * row_height
+        r_rect = QRectF(table_rect.left(), y, table_rect.width(), row_height)
         if r_idx % 2 == 1:
             painter.setBrush(QBrush(QColor("#242429")))
             painter.setPen(Qt.PenStyle.NoPen)
             if r_idx == len(region.rows) - 1:
                 painter.drawRoundedRect(r_rect, 6.0, 6.0)
-                painter.drawRect(QRectF(actual_rect.left(), y, target_w, 6.0))
+                painter.drawRect(QRectF(table_rect.left(), y, table_rect.width(), 6.0))
             else:
                 painter.drawRect(r_rect)
 
-    # Draw Header Cells
-    x_cursor = actual_rect.left()
+    # Set clipping region for cell contents and vertical dividers
+    body_clip = table_rect.adjusted(1.0, 1.0, -1.0, -1.0)
+    painter.setClipRect(body_clip)
+
+    hit_cells: List[Tuple[int, int, QRectF]] = []
+
+    # Draw Header Cells shifted by clamped_scroll
+    x_cursor = table_rect.left() - clamped_scroll
     painter.setFont(header_font)
     painter.setPen(QColor("#ffffff"))
     for c_idx in range(num_cols):
         w = col_widths[c_idx]
-        c_rect = QRectF(x_cursor, actual_rect.top(), w, row_height)
+        c_rect = QRectF(x_cursor, table_rect.top(), w, row_height)
         hit_cells.append((region.start_block, c_idx, c_rect))
         text_rect = c_rect.adjusted(10.0, 0.0, -10.0, 0.0)
         clean_text = clean_cell_text(region.headers[c_idx])
-        elided = fm_h.elidedText(clean_text, Qt.TextElideMode.ElideRight, int(w - 18.0))
-        painter.drawText(text_rect, int(region.alignments[c_idx]), elided)
+        painter.drawText(text_rect, int(region.alignments[c_idx]), clean_text)
         x_cursor += w
 
-    # Draw Body Cells
+    # Draw Body Cells shifted by clamped_scroll
     painter.setFont(body_font)
     painter.setPen(QColor("#e5e5ea"))
     for r_idx, (block_num, r_cells) in enumerate(region.rows):
-        y = actual_rect.top() + (r_idx + 1) * row_height
-        x_cursor = actual_rect.left()
+        y = table_rect.top() + (r_idx + 1) * row_height
+        x_cursor = table_rect.left() - clamped_scroll
         for c_idx in range(num_cols):
             w = col_widths[c_idx]
             c_rect = QRectF(x_cursor, y, w, row_height)
@@ -354,44 +392,53 @@ def render_table(
             text_rect = c_rect.adjusted(10.0, 0.0, -10.0, 0.0)
             cell_val = r_cells[c_idx] if c_idx < len(r_cells) else ""
             clean_text = clean_cell_text(cell_val)
-            elided = fm_b.elidedText(clean_text, Qt.TextElideMode.ElideRight, int(w - 18.0))
-            painter.drawText(text_rect, int(region.alignments[c_idx]), elided)
+            painter.drawText(text_rect, int(region.alignments[c_idx]), clean_text)
             x_cursor += w
 
-    # Grid lines & outer border
+    # Vertical column dividers (inside clip)
     grid_pen = QPen(QColor("#38383f"), 1.0)
     painter.setPen(grid_pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
+    x_cursor = table_rect.left() - clamped_scroll
+    for c_idx in range(num_cols - 1):
+        x_cursor += col_widths[c_idx]
+        painter.drawLine(
+            int(x_cursor),
+            int(table_rect.top()),
+            int(x_cursor),
+            int(table_rect.bottom()),
+        )
 
-    # Horizontal row dividers
+    # Disable clipping for horizontal lines and outer border
+    painter.setClipping(False)
+
+    # Horizontal row dividers across visible width
     for r_idx in range(1, total_rows):
-        y = actual_rect.top() + r_idx * row_height
+        y = table_rect.top() + r_idx * row_height
         if r_idx == 1:
             painter.setPen(QPen(QColor("#484852"), 1.4))
         else:
             painter.setPen(grid_pen)
         painter.drawLine(
-            int(actual_rect.left()),
+            int(table_rect.left()),
             int(y),
-            int(actual_rect.right()),
+            int(table_rect.right()),
             int(y),
         )
 
-    # Vertical column dividers
-    painter.setPen(grid_pen)
-    x_cursor = actual_rect.left()
-    for c_idx in range(num_cols - 1):
-        x_cursor += col_widths[c_idx]
-        painter.drawLine(
-            int(x_cursor),
-            int(actual_rect.top()),
-            int(x_cursor),
-            int(actual_rect.bottom()),
-        )
+    # Horizontal scrollbar if table overflows
+    sb_info = get_table_scrollbar_geometry(table_rect, content_w, clamped_scroll)
+    if sb_info is not None:
+        track_rect, thumb_rect, _ = sb_info
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor("#18181c")))
+        painter.drawRoundedRect(track_rect, 2.5, 2.5)
+        painter.setBrush(QBrush(QColor("#52525a")))
+        painter.drawRoundedRect(thumb_rect, 2.5, 2.5)
 
     # Outer border
     painter.setPen(QPen(QColor("#42424a"), 1.2))
-    painter.drawRoundedRect(actual_rect, 6.0, 6.0)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(table_rect, 6.0, 6.0)
 
     painter.restore()
     return hit_cells

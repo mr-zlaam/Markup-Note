@@ -18,8 +18,10 @@ from PyQt6.QtGui import (
     QTextBlock,
     QTextCursor,
     QTextOption,
+    QWheelEvent,
 )
 from PyQt6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -32,6 +34,10 @@ from PyQt6.QtWidgets import (
 from core.note import Note
 from ui.highlighter import HR_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from utils.code_engine import (
+    CodeRegion,
+    get_code_content_width,
+    get_code_copy_button_rect,
+    get_code_scrollbar_geometry,
     render_code_card,
 )
 from utils.markdown import (
@@ -49,9 +55,12 @@ from utils.mermaid_engine import (
     render_mermaid_to_pixmap,
 )
 from utils.table import (
+    TableRegion,
     create_empty_table_row,
     find_next_cell_pos,
     find_prev_cell_pos,
+    get_table_column_widths,
+    get_table_scrollbar_geometry,
     is_empty_table_row,
     is_table_row,
     is_table_separator,
@@ -90,9 +99,47 @@ class MarkdownEditor(QTextEdit):
         self.document().contentsChanged.connect(self._on_contents_changed)
         self._rendered_block_rects: list[tuple[int, int, QRectF]] = []
 
+        # Horizontal scrolling & interaction states for tables and code blocks
+        self._table_scroll_x: dict[int, float] = {}
+        self._code_scroll_x: dict[int, float] = {}
+        self._scrollbar_drag: Optional[tuple[str, int, float, float, float, float, float]] = None
+        self._hovered_copy_btn: Optional[int] = None
+        self._copied_code_block: Optional[int] = None
+        self._copied_timer = QTimer(self)
+        self._copied_timer.setSingleShot(True)
+        self._copied_timer.setInterval(2000)
+        self._copied_timer.timeout.connect(self._reset_copied_state)
+
         # Enable mouse tracking so hovering over checkboxes and preview cards shows a pointer cursor
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
+
+    def _reset_copied_state(self) -> None:
+        """Reset the copy button feedback to default."""
+        self._copied_code_block = None
+        self.viewport().update()
+
+    def _get_table_rect(self, tr: TableRegion) -> Optional[QRectF]:
+        """Compute the geometry QRectF of an inactive rendered table card."""
+        b_top = self.document().findBlockByNumber(tr.start_block)
+        b_bot = self.document().findBlockByNumber(tr.end_block)
+        if not (b_top.isValid() and b_bot.isValid()):
+            return None
+        r_top = self.cursorRect(QTextCursor(b_top))
+        r_bot = self.cursorRect(QTextCursor(b_bot))
+        avail_w = max(100.0, float(self.viewport().width() - r_top.left() - 28))
+        return QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
+
+    def _get_code_card_rect(self, cr: CodeRegion) -> Optional[QRectF]:
+        """Compute the geometry QRectF of an inactive rendered code card."""
+        b_top = self.document().findBlockByNumber(cr.start_block)
+        b_bot = self.document().findBlockByNumber(cr.end_block)
+        if not (b_top.isValid() and b_bot.isValid()):
+            return None
+        r_top = self.cursorRect(QTextCursor(b_top))
+        r_bot = self.cursorRect(QTextCursor(b_bot))
+        avail_w = max(100.0, float(self.viewport().width() - r_top.left() - 28.0))
+        return QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
 
     def _on_contents_changed(self) -> None:
         """Recompute table, math, and mermaid regions on text content modification."""
@@ -151,7 +198,8 @@ class MarkdownEditor(QTextEdit):
             avail_w = max(100.0, float(vp_width - r_top.left() - 28))
             table_rect = QRectF(float(r_top.left()), float(r_top.top()), avail_w, float(r_bot.bottom() - r_top.top()))
             self._rendered_block_rects.append((tr.start_block, tr.end_block, table_rect))
-            render_table(painter, table_rect, tr, self.font())
+            scroll_x = self._table_scroll_x.get(tr.start_block, 0.0)
+            render_table(painter, table_rect, tr, self.font(), scroll_x=scroll_x)
 
         # 2. Render Inactive Display Math ($$ ... $$)
         for mr in self.highlighter.math_regions:
@@ -223,7 +271,17 @@ class MarkdownEditor(QTextEdit):
                 float(r_bot.bottom() - r_top.top()),
             )
             self._rendered_block_rects.append((cr.start_block, cr.end_block, card_rect))
-            render_code_card(painter, card_rect, cr)
+            scroll_x = self._code_scroll_x.get(cr.start_block, 0.0)
+            is_copied = self._copied_code_block == cr.start_block
+            is_hovered = self._hovered_copy_btn == cr.start_block
+            render_code_card(
+                painter,
+                card_rect,
+                cr,
+                scroll_x=scroll_x,
+                is_copied=is_copied,
+                is_copy_hovered=is_hovered,
+            )
 
         # 5. Render Checkboxes, Inactive Bullets & Inactive Inline Math ($...$)
         block = self.document().firstBlock()
@@ -434,9 +492,71 @@ class MarkdownEditor(QTextEdit):
         QDesktopServices.openUrl(QUrl(clean_url))
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Show a pointing hand cursor when hovering over a checkbox, preview card, or link."""
+        """Show pointer cursor on interactive elements and handle scrollbar dragging."""
         super().mouseMoveEvent(event)
         pos = event.position()
+        active_bn = self.highlighter.active_block_number
+
+        # Handle active scrollbar dragging
+        if self._scrollbar_drag is not None:
+            kind, block_id, start_x, start_s, max_s, track_w, thumb_w = self._scrollbar_drag
+            scroll_range = max(1.0, track_w - thumb_w)
+            dx = pos.x() - start_x
+            new_s = max(0.0, min(max_s, start_s + (dx / scroll_range) * max_s))
+            if kind == "table":
+                self._table_scroll_x[block_id] = new_s
+            else:
+                self._code_scroll_x[block_id] = new_s
+            self.viewport().update()
+            return
+
+        # Check if hovering over Code Copy button
+        old_hovered_copy = self._hovered_copy_btn
+        self._hovered_copy_btn = None
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    btn_rect = get_code_copy_button_rect(card_rect)
+                    if btn_rect.contains(pos):
+                        self._hovered_copy_btn = cr.start_block
+                        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+                        tip = "Copied!" if self._copied_code_block == cr.start_block else "Copy code to clipboard"
+                        QToolTip.showText(event.globalPosition().toPoint(), tip, self.viewport())
+                        if old_hovered_copy != self._hovered_copy_btn:
+                            self.viewport().update()
+                        return
+
+        if old_hovered_copy is not None:
+            self.viewport().update()
+
+        # Check if hovering over table scrollbar
+        for tr in self.highlighter.table_regions:
+            if not (tr.start_block <= active_bn <= tr.end_block):
+                tbl_rect = self._get_table_rect(tr)
+                if tbl_rect is not None and tbl_rect.contains(pos):
+                    content_w, _ = get_table_column_widths(tr, self.font(), tbl_rect.width())
+                    cur_s = self._table_scroll_x.get(tr.start_block, 0.0)
+                    sb = get_table_scrollbar_geometry(tbl_rect, content_w, cur_s)
+                    if sb is not None and sb[0].contains(pos):
+                        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                        QToolTip.hideText()
+                        return
+
+        # Check if hovering over code scrollbar
+        for cr in self.highlighter.code_regions:
+            if not (cr.start_block <= active_bn <= cr.end_block):
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    content_w = get_code_content_width(cr)
+                    cur_s = self._code_scroll_x.get(cr.start_block, 0.0)
+                    sb = get_code_scrollbar_geometry(card_rect, content_w, cur_s)
+                    if sb is not None and sb[0].contains(pos):
+                        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                        QToolTip.hideText()
+                        return
+
+        # Checkboxes and preview cards
         if (
             self._checkbox_block_at_pos(pos) is not None
             or self._region_at_pos(pos) is not None
@@ -460,24 +580,85 @@ class MarkdownEditor(QTextEdit):
         QToolTip.hideText()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle clicking directly on checkboxes, preview cards, or Ctrl+Click on links."""
+        """Handle clicking directly on checkboxes, copy buttons, scrollbars, preview cards, or Ctrl+Click on links."""
         if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
+            active_bn = self.highlighter.active_block_number
+
             # 0. Ctrl+Click on link -> open in browser
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                link_info = self._link_at_pos(event.position())
+                link_info = self._link_at_pos(pos)
                 if link_info is not None:
                     _, _, url = link_info
                     self._open_url(url)
                     return
 
-            # 1. Checkbox click -> toggle
-            block = self._checkbox_block_at_pos(event.position())
+            # 1. Click on Code Card Copy button
+            for cr in self.highlighter.code_regions:
+                if not (cr.start_block <= active_bn <= cr.end_block):
+                    card_rect = self._get_code_card_rect(cr)
+                    if card_rect is not None and card_rect.contains(pos):
+                        btn_rect = get_code_copy_button_rect(card_rect)
+                        if btn_rect.contains(pos):
+                            code_text = "\n".join(cr.lines)
+                            QApplication.clipboard().setText(code_text)
+                            self._copied_code_block = cr.start_block
+                            self._copied_timer.start(2000)
+                            self.viewport().update()
+                            return
+
+            # 2. Click on Code Card Scrollbar
+            for cr in self.highlighter.code_regions:
+                if not (cr.start_block <= active_bn <= cr.end_block):
+                    card_rect = self._get_code_card_rect(cr)
+                    if card_rect is not None:
+                        content_w = get_code_content_width(cr)
+                        cur_s = self._code_scroll_x.get(cr.start_block, 0.0)
+                        sb = get_code_scrollbar_geometry(card_rect, content_w, cur_s)
+                        if sb is not None:
+                            track_r, thumb_r, max_s = sb
+                            if track_r.contains(pos):
+                                if not thumb_r.contains(pos):
+                                    ratio = (pos.x() - track_r.left()) / max(1.0, track_r.width())
+                                    cur_s = max(0.0, min(max_s, ratio * max_s))
+                                    self._code_scroll_x[cr.start_block] = cur_s
+                                self._scrollbar_drag = ("code", cr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
+                                self.viewport().update()
+                                return
+                            elif thumb_r.contains(pos):
+                                self._scrollbar_drag = ("code", cr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
+                                return
+
+            # 3. Click on Table Scrollbar
+            for tr in self.highlighter.table_regions:
+                if not (tr.start_block <= active_bn <= tr.end_block):
+                    tbl_rect = self._get_table_rect(tr)
+                    if tbl_rect is not None:
+                        content_w, _ = get_table_column_widths(tr, self.font(), tbl_rect.width())
+                        cur_s = self._table_scroll_x.get(tr.start_block, 0.0)
+                        sb = get_table_scrollbar_geometry(tbl_rect, content_w, cur_s)
+                        if sb is not None:
+                            track_r, thumb_r, max_s = sb
+                            if track_r.contains(pos):
+                                if not thumb_r.contains(pos):
+                                    ratio = (pos.x() - track_r.left()) / max(1.0, track_r.width())
+                                    cur_s = max(0.0, min(max_s, ratio * max_s))
+                                    self._table_scroll_x[tr.start_block] = cur_s
+                                self._scrollbar_drag = ("table", tr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
+                                self.viewport().update()
+                                return
+                            elif thumb_r.contains(pos):
+                                self._scrollbar_drag = ("table", tr.start_block, pos.x(), cur_s, max_s, track_r.width(), thumb_r.width())
+                                return
+
+            # 4. Checkbox click -> toggle
+            block = self._checkbox_block_at_pos(pos)
             if block is not None:
                 self._toggle_checkbox_at_block(block)
                 return
 
-            # 2. Rendered preview card click -> place cursor inside to edit
-            reg = self._region_at_pos(event.position())
+            # 5. Rendered preview card click -> place cursor inside to edit
+            reg = self._region_at_pos(pos)
             if reg is not None:
                 s_blk, _, _ = reg
                 target_block = self.document().findBlockByNumber(s_blk + 1)
@@ -490,6 +671,57 @@ class MarkdownEditor(QTextEdit):
                     return
 
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Finish any active scrollbar dragging."""
+        self._scrollbar_drag = None
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Handle horizontal scrolling on tables and code blocks with trackpad or Shift+Wheel."""
+        pos = event.position()
+        delta_x = event.angleDelta().x()
+        if delta_x == 0 and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            delta_x = event.angleDelta().y()
+
+        active_bn = self.highlighter.active_block_number
+
+        if delta_x != 0:
+            # 1. Check if hovering over an inactive table
+            for tr in self.highlighter.table_regions:
+                if tr.start_block <= active_bn <= tr.end_block:
+                    continue
+                tbl_rect = self._get_table_rect(tr)
+                if tbl_rect is not None and tbl_rect.contains(pos):
+                    content_w, _ = get_table_column_widths(tr, self.font(), tbl_rect.width())
+                    max_s = max(0.0, content_w - tbl_rect.width())
+                    if max_s > 0:
+                        cur_s = self._table_scroll_x.get(tr.start_block, 0.0)
+                        new_s = max(0.0, min(max_s, cur_s - delta_x * 0.8))
+                        if new_s != cur_s:
+                            self._table_scroll_x[tr.start_block] = new_s
+                            self.viewport().update()
+                        event.accept()
+                        return
+
+            # 2. Check if hovering over an inactive code card
+            for cr in self.highlighter.code_regions:
+                if cr.start_block <= active_bn <= cr.end_block:
+                    continue
+                card_rect = self._get_code_card_rect(cr)
+                if card_rect is not None and card_rect.contains(pos):
+                    content_w = get_code_content_width(cr)
+                    max_s = max(0.0, content_w - card_rect.width())
+                    if max_s > 0:
+                        cur_s = self._code_scroll_x.get(cr.start_block, 0.0)
+                        new_s = max(0.0, min(max_s, cur_s - delta_x * 0.8))
+                        if new_s != cur_s:
+                            self._code_scroll_x[cr.start_block] = new_s
+                            self.viewport().update()
+                        event.accept()
+                        return
+
+        super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle Ctrl+Enter checkbox toggling, smart list continuation, and Tab indentation."""
@@ -870,6 +1102,11 @@ class EditorPanel(QWidget):
         cleaned_content = re.sub(
             r"^(\s*[-*+]\s*)\[\](?=\s|$)", r"\1[ ]", cleaned_content, flags=re.MULTILINE
         )
+
+        self.editor._table_scroll_x.clear()
+        self.editor._code_scroll_x.clear()
+        self.editor._copied_code_block = None
+        self.editor._scrollbar_drag = None
 
         self.editor.blockSignals(True)
         self.editor.setPlainText(cleaned_content)

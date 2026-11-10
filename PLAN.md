@@ -74,8 +74,14 @@
   * `Ctrl+Click` or pressing `Ctrl+Enter` when on a link opens the URL in the system default web browser.
 * 🟢 **`[Completed]`** **Advanced Markdown: Styled Vector Tables (`utils/table.py`):**
   * Auto-formatting pipe tables with column alignment (`:---`, `:---:`, `---:`), alternating rows, and rounded card styling.
+  * Natural column auto-sizing without artificial 240px clipping.
+  * Native horizontal scrolling for wide tables (wheel, trackpad horizontal swipe, Shift+Wheel, or dragging the scrollbar thumb).
   * `Tab` to navigate cells, `Shift+Tab` to go to previous cell, `Enter` to auto-continue rows or auto-generate header separators.
   * Mathematical notation cleanup in table cards (`Aᵀ`, `A⁻¹`, `det(A)`, `tr(A)`, `λᵢ`, `Iₙ`, `O(n²)`).
+* 🟢 **`[Completed]`** **Advanced Markdown: Syntax-Highlighted Code Cards (`utils/code_engine.py`):**
+  * macOS-style rounded cards with 3 window control dots (`#ff5f56`, `#ffbd2e`, `#27c93f`), language badge, and monospaced syntax coloring.
+  * One-click "Copy" button in the header bar with emerald green "Copied!" feedback and system clipboard synchronization.
+  * Native horizontal scrolling for long code lines with subtle scrollbar indicator.
 * 🟢 **`[Completed]`** **Advanced Markdown: LaTeX Math Typesetting (`utils/math_engine.py`):**
   * Offline pure-Python recursive-descent math parser and typesetter.
   * Delimiters: standard LaTeX `\[ ... \]` / `\\[ ... \\]` (display) and `\( ... \)` / `\\( ... \\)` (inline) in addition to `$$...$$` and `$..$`.

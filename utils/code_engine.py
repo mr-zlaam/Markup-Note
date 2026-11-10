@@ -142,12 +142,57 @@ def tokenize_code_line(line: str, lang: str) -> List[Tuple[str, QColor]]:
     return tokens
 
 
+def get_code_content_width(region: CodeRegion) -> float:
+    """Calculate the max natural width of all lines in the code block."""
+    code_font = QFont("DejaVu Sans Mono", -1)
+    code_font.setPixelSize(13)
+    fm = QFontMetricsF(code_font)
+    max_w = 0.0
+    for line in region.lines:
+        w = fm.horizontalAdvance(line)
+        if w > max_w:
+            max_w = w
+    return max_w + 36.0  # 16px left + 20px right margin
+
+
+def get_code_scrollbar_geometry(
+    card_rect: QRectF, content_width: float, scroll_x: float
+) -> Optional[Tuple[QRectF, QRectF, float]]:
+    """Return (track_rect, thumb_rect, max_scroll) if code is wider than the card."""
+    if content_width <= card_rect.width() + 1.0:
+        return None
+    max_scroll = content_width - card_rect.width()
+    clamped_scroll = max(0.0, min(scroll_x, max_scroll))
+    track_h = 5.0
+    track_y = card_rect.bottom() - track_h - 2.0
+    track_rect = QRectF(card_rect.left() + 8.0, track_y, max(10.0, card_rect.width() - 16.0), track_h)
+    track_w = track_rect.width()
+    thumb_w = max(36.0, min(track_w, track_w * (card_rect.width() / content_width)))
+    scroll_range = max(1.0, track_w - thumb_w)
+    thumb_x = track_rect.left() + (clamped_scroll / max_scroll) * scroll_range
+    thumb_rect = QRectF(thumb_x, track_y, thumb_w, track_h)
+    return track_rect, thumb_rect, max_scroll
+
+
+def get_code_copy_button_rect(card_rect: QRectF) -> QRectF:
+    """Return the QRectF of the Copy button in the code card header."""
+    header_h = 28.0
+    btn_w = 58.0
+    btn_h = 20.0
+    btn_x = card_rect.right() - btn_w - 10.0
+    btn_y = card_rect.top() + (header_h - btn_h) / 2.0
+    return QRectF(btn_x, btn_y, btn_w, btn_h)
+
+
 def render_code_card(
     painter: QPainter,
     card_rect: QRectF,
     region: CodeRegion,
+    scroll_x: float = 0.0,
+    is_copied: bool = False,
+    is_copy_hovered: bool = False,
 ) -> None:
-    """Render a rounded code card container with macOS header dots and syntax highlighting."""
+    """Render a rounded code card container with macOS dots, copy button, and horizontal scrolling."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -183,25 +228,54 @@ def render_code_card(
         painter.setBrush(col)
         painter.drawEllipse(QPointF(card_rect.left() + dx, card_rect.top() + 14.0), 4.2, 4.2)
 
-    # 4. Language badge
+    # 4. Copy Button on header right
+    copy_btn_rect = get_code_copy_button_rect(card_rect)
+    if is_copied:
+        painter.setPen(QPen(QColor("#30d158"), 1.0))
+        painter.setBrush(QBrush(QColor("#1b3826")))
+    else:
+        painter.setPen(QPen(QColor("#545462") if is_copy_hovered else QColor("#383842"), 1.0))
+        painter.setBrush(QBrush(QColor("#2c2c36") if is_copy_hovered else QColor("#22222a")))
+    painter.drawRoundedRect(copy_btn_rect, 4.0, 4.0)
+
+    btn_font = QFont("Cantarell", -1)
+    btn_font.setPixelSize(11)
+    btn_font.setWeight(QFont.Weight.DemiBold)
+    painter.setFont(btn_font)
+    if is_copied:
+        painter.setPen(QColor("#30d158"))
+    else:
+        painter.setPen(QColor("#ffffff") if is_copy_hovered else QColor("#a6a6b0"))
+    painter.drawText(
+        copy_btn_rect,
+        int(Qt.AlignmentFlag.AlignCenter),
+        "Copied!" if is_copied else "Copy",
+    )
+
+    # 5. Language badge (left of copy button)
     badge_name = region.language.upper() if region.language else "CODE"
     badge_font = QFont("Cantarell", -1)
     badge_font.setPixelSize(11)
     badge_font.setWeight(QFont.Weight.Bold)
     painter.setFont(badge_font)
     painter.setPen(QColor("#8e8e93"))
+    badge_rect = QRectF(copy_btn_rect.left() - 90.0, card_rect.top(), 82.0, header_h)
     painter.drawText(
-        QRectF(card_rect.right() - 114.0, card_rect.top(), 100.0, header_h),
+        badge_rect,
         int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
         badge_name,
     )
 
-    # 5. Code body lines
+    # 6. Code body lines with horizontal scrolling
     code_font = QFont("DejaVu Sans Mono", -1)
     code_font.setPixelSize(13)
     painter.setFont(code_font)
     fm = QFontMetricsF(code_font)
     line_h = 22.0
+
+    content_w = get_code_content_width(region)
+    max_scroll = max(0.0, content_w - card_rect.width())
+    clamped_scroll = max(0.0, min(scroll_x, max_scroll))
 
     # Clip to card body so code never spills outside card boundaries
     body_clip = card_rect.adjusted(1.0, header_h + 1.0, -1.0, -1.0)
@@ -209,12 +283,23 @@ def render_code_card(
 
     curr_y = card_rect.top() + header_h + 8.0 + fm.ascent()
     for line in region.lines:
-        curr_x = card_rect.left() + 16.0
+        curr_x = card_rect.left() + 16.0 - clamped_scroll
         tokens = tokenize_code_line(line, region.language)
         for val, col in tokens:
             painter.setPen(col)
             painter.drawText(QPointF(curr_x, curr_y), val)
             curr_x += fm.horizontalAdvance(val)
         curr_y += line_h
+
+    # 7. Horizontal scrollbar if code overflows card width
+    painter.setClipping(False)
+    sb_info = get_code_scrollbar_geometry(card_rect, content_w, clamped_scroll)
+    if sb_info is not None:
+        track_rect, thumb_rect, _ = sb_info
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor("#18181c")))
+        painter.drawRoundedRect(track_rect, 2.5, 2.5)
+        painter.setBrush(QBrush(QColor("#4e4e58")))
+        painter.drawRoundedRect(thumb_rect, 2.5, 2.5)
 
     painter.restore()

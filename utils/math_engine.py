@@ -51,7 +51,7 @@ LATEX_SYMBOLS: Dict[str, str] = {
     # Calculus & misc
     "infty": "∞", "partial": "∂", "nabla": "∇", "aleph": "ℵ", "hbar": "ℏ",
     "ell": "ℓ", "wp": "℘", "Re": "ℜ", "Im": "ℑ", "angle": "∠", "triangle": "△",
-    "perp": "⊥", "parallel": "∥", "dots": "…", "ldots": "…", "cdots": "⋯",
+    "perp": "⊥", "parallel": "∥", "mid": "∣", "|": "∥", "dots": "…", "ldots": "…", "cdots": "⋯",
     "vdots": "⋮", "ddots": "⋱", "prime": "′", "deg": "°", "quad": "  ",
     "qquad": "    ", ",": " ", ";": " ", ":": " ", "!": "",
 }
@@ -62,16 +62,28 @@ BLACKBOARD_MAP = {
     "R": "ℝ", "N": "ℕ", "Z": "ℤ", "Q": "ℚ", "C": "ℂ", "P": "ℙ", "E": "𝔼", "F": "𝔽", "H": "ℍ",
 }
 
-INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)")
-SINGLE_LINE_DISPLAY_MATH_RE = re.compile(r"^\s*\$\$(.+?)\$\$\s*$")
-FENCE_DISPLAY_MATH_RE = re.compile(r"^\s*\$\$\s*$")
+INLINE_MATH_RE = re.compile(r"(?:(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$|\\+\((.+?)\\+\))")
+SINGLE_LINE_DISPLAY_MATH_RE = re.compile(r"^\s*(?:\$\$|\\+\[)\s*(.+?)\s*(?:\$\$|\\+\])\s*$")
+FENCE_OPEN_MATH_RE = re.compile(r"^\s*(?:\$\$|\\+\[)\s*$")
+FENCE_CLOSE_MATH_RE = re.compile(r"^\s*(?:\$\$|\\+\])\s*$")
+FENCE_DISPLAY_MATH_RE = re.compile(r"^\s*(?:\$\$|\\+\[|\\+\])\s*$")
 
 _PIXMAP_CACHE: Dict[Tuple[str, int, bool], QPixmap] = {}
 
 
+def sanitize_latex(latex: str) -> str:
+    """Pre-process and unescape markdown-escaped LaTeX strings."""
+    s = re.sub(r"\\_", "_", latex)
+    s = re.sub(r"\\\^", "^", s)
+    s = re.sub(r"\\\\([,;:!])", r"\\\1", s)
+    s = re.sub(r"\\\\(quad|qquad)", r"\\\1", s)
+    s = re.sub(r"\\{3,}", r"\\\\", s)
+    return s
+
+
 @dataclass
 class MathRegion:
-    """Represents a display math block ($$ ... $$) in the document."""
+    """Represents a display math block ($$ ... $$, \\[ ... \\], or \\[ ... \\]) in the document."""
 
     start_block: int
     end_block: int
@@ -79,7 +91,7 @@ class MathRegion:
 
 
 def find_display_math_regions(doc: QTextDocument) -> List[MathRegion]:
-    """Scan a QTextDocument for single-line or multi-line $$ ... $$ blocks."""
+    """Scan a QTextDocument for single-line or multi-line display math blocks."""
     regions: List[MathRegion] = []
     total = doc.blockCount()
     i = 0
@@ -91,13 +103,13 @@ def find_display_math_regions(doc: QTextDocument) -> List[MathRegion]:
             i += 1
             continue
 
-        if FENCE_DISPLAY_MATH_RE.match(text):
+        if FENCE_OPEN_MATH_RE.match(text):
             lines: List[str] = []
             j = i + 1
             closed = False
             while j < total:
                 jt = doc.findBlockByNumber(j).text()
-                if FENCE_DISPLAY_MATH_RE.match(jt):
+                if FENCE_CLOSE_MATH_RE.match(jt):
                     closed = True
                     break
                 lines.append(jt)
@@ -342,6 +354,31 @@ class AccentBox(MathBox):
         painter.restore()
 
 
+class BoxedBox(MathBox):
+    """Renders a border box around an inner MathBox (LaTeX \\boxed{...})."""
+
+    def __init__(self, inner: MathBox, font_size: float) -> None:
+        self.inner = inner
+        self.pad_x = max(6.0, font_size * 0.38)
+        self.pad_y = max(4.0, font_size * 0.26)
+        w = inner.width + self.pad_x * 2
+        asc = inner.ascent + self.pad_y
+        desc = inner.descent + self.pad_y
+        super().__init__(width=w, ascent=asc, descent=desc)
+
+    def draw(self, painter: QPainter, x: float, baseline_y: float) -> None:
+        self.inner.draw(painter, x + self.pad_x, baseline_y)
+
+        painter.save()
+        pen = QPen(QColor("#a1a1a6"), 1.3)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        rect = QRectF(x + 1.0, baseline_y - self.ascent + 1.0, self.width - 2.0, self.height - 2.0)
+        painter.drawRect(rect)
+        painter.restore()
+
+
 class MatrixBox(MathBox):
     """Renders a 2D matrix grid with optional surrounding brackets (), [], ||, or {}."""
 
@@ -422,7 +459,7 @@ class LatexParser:
     """Recursive-descent parser converting a LaTeX math string into a MathBox tree."""
 
     def __init__(self, text: str, base_size: float, display_mode: bool) -> None:
-        self.text = text.strip()
+        self.text = sanitize_latex(text.strip())
         self.pos = 0
         self.base_size = base_size
         self.display_mode = display_mode
@@ -538,6 +575,17 @@ class LatexParser:
                 return MatrixBox([[num], [den]], bracket_type="p", font_size=font_size)
             return fbox
 
+        if cmd == "boxed":
+            inner = self._parse_group(font_size)
+            return BoxedBox(inner, font_size=font_size)
+
+        if cmd == "operatorname":
+            name = self._read_braced_str()
+            return RowBox([
+                self._make_glyph(name, font_size, italic=False),
+                SpaceBox(font_size * 0.16),
+            ])
+
         if cmd == "sqrt":
             self._skip_spaces()
             idx_box: Optional[MathBox] = None
@@ -557,13 +605,10 @@ class LatexParser:
             self._skip_spaces()
             raw = ""
             if self.pos < len(self.text) and self.text[self.pos] == "{":
+                raw = self._read_braced_str()
+            elif self.pos < len(self.text) and not self.text[self.pos].isspace():
+                raw = self.text[self.pos]
                 self.pos += 1
-                start = self.pos
-                while self.pos < len(self.text) and self.text[self.pos] != "}":
-                    self.pos += 1
-                raw = self.text[start : self.pos]
-                if self.pos < len(self.text):
-                    self.pos += 1
             if cmd == "mathbb":
                 mapped = "".join(BLACKBOARD_MAP.get(c, c) for c in raw)
                 return self._make_glyph(mapped, font_size, italic=False, bold=True)
@@ -590,7 +635,7 @@ class LatexParser:
                 body = self.text[self.pos : end_idx]
                 self.pos = end_idx + len(end_marker)
 
-            row_strs = [r.strip() for r in body.split("\\\\") if r.strip()]
+            row_strs = [r.strip() for r in re.split(r"\\{2,}", body) if r.strip()]
             grid: List[List[MathBox]] = []
             for r_str in row_strs:
                 cells = [
@@ -638,10 +683,17 @@ class LatexParser:
         if self.pos < len(self.text) and self.text[self.pos] == "{":
             self.pos += 1
             start = self.pos
-            while self.pos < len(self.text) and self.text[self.pos] != "}":
+            depth = 1
+            while self.pos < len(self.text) and depth > 0:
+                if self.text[self.pos] == "{":
+                    depth += 1
+                elif self.text[self.pos] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
                 self.pos += 1
             val = self.text[start : self.pos]
-            if self.pos < len(self.text):
+            if self.pos < len(self.text) and self.text[self.pos] == "}":
                 self.pos += 1
             return val.strip()
         return ""

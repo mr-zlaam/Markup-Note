@@ -3,10 +3,11 @@
 import re
 from typing import Optional
 
-from PyQt6.QtCore import QPointF, QRect, QRectF, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QDesktopServices,
     QFont,
     QKeyEvent,
     QMouseEvent,
@@ -16,20 +17,26 @@ from PyQt6.QtGui import (
     QPen,
     QTextBlock,
     QTextCursor,
+    QTextOption,
 )
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
     QTextEdit,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
 from core.note import Note
-from ui.highlighter import MarkdownHighlighter
+from ui.highlighter import HR_RE, MarkdownHighlighter
+from utils.code_engine import (
+    render_code_card,
+)
 from utils.markdown import (
     CHECKBOX_PATTERN,
+    find_link_at_offset,
     get_auto_continue_prefix,
     get_checkbox_info,
     is_checkbox_line,
@@ -62,15 +69,18 @@ class MarkdownEditor(QTextEdit):
         self.setPlaceholderText("Write your note in Markdown...")
         self.setAcceptRichText(False)
 
-        # Guarantee strict Left-to-Right layout
+        # Guarantee strict Left-to-Right layout and clean word wrapping
         self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         opt = self.document().defaultTextOption()
         opt.setTextDirection(Qt.LayoutDirection.LeftToRight)
         opt.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        opt.setWrapMode(QTextOption.WrapMode.WordWrap)
         self.document().setDefaultTextOption(opt)
+        self.setWordWrapMode(QTextOption.WrapMode.WordWrap)
 
         # Set base editor font in Python so QSyntaxHighlighter can freely scale headings
-        base_font = QFont("Cantarell", 12)
+        base_font = QFont("Cantarell", 16)
+        base_font.setPointSize(16)
         self.setFont(base_font)
         self.document().setDefaultFont(base_font)
 
@@ -191,29 +201,68 @@ class MarkdownEditor(QTextEdit):
             py = mmd_rect.top() + max(0.0, (mmd_rect.height() - log_h) / 2.0)
             painter.drawPixmap(QPointF(px, py), pix)
 
-        # 4. Render Checkboxes & Inactive Inline Math ($...$)
+        # 4. Render Inactive Code Cards (```lang ... ```)
+        for cr in self.highlighter.code_regions:
+            if cr.start_block <= active_bn <= cr.end_block:
+                continue
+
+            b_top = self.document().findBlockByNumber(cr.start_block)
+            b_bot = self.document().findBlockByNumber(cr.end_block)
+            if not (b_top.isValid() and b_bot.isValid()):
+                continue
+
+            r_top = self.cursorRect(QTextCursor(b_top))
+            r_bot = self.cursorRect(QTextCursor(b_bot))
+            if r_top.top() > vp_height or r_bot.bottom() < 0:
+                continue
+
+            card_rect = QRectF(
+                float(r_top.left()),
+                float(r_top.top()),
+                float(vp_width - r_top.left() - 28.0),
+                float(r_bot.bottom() - r_top.top()),
+            )
+            self._rendered_block_rects.append((cr.start_block, cr.end_block, card_rect))
+            render_code_card(painter, card_rect, cr)
+
+        # 5. Render Checkboxes & Inactive Inline Math ($...$)
         block = self.document().firstBlock()
         while block.isValid():
             if block.isVisible():
                 b_num = block.blockNumber()
                 text = block.text()
 
-                # Checkbox
-                match = CHECKBOX_PATTERN.match(text)
-                if match:
-                    indent, _, status, _ = match.groups()
+                # Horizontal rule (draw clean vector divider line)
+                if HR_RE.match(text):
                     c = QTextCursor(block)
-                    c.setPosition(block.position() + len(indent))
                     rect = self.cursorRect(c)
-                    if rect.top() > vp_height:
-                        break
-                    if rect.bottom() >= 0:
-                        self._draw_checkbox(painter, rect, status.lower() == "x")
+                    if rect.bottom() >= 0 and rect.top() <= vp_height:
+                        line_y = float(rect.top()) + float(rect.height()) / 2.0
+                        painter.setPen(QPen(QColor("#48484a"), 1.2))
+                        painter.drawLine(QPointF(float(rect.left()), line_y), QPointF(float(vp_width - 24.0), line_y))
 
-                # Inline Math on inactive blocks
-                if b_num != active_bn and "$" in text:
+                # Checkbox (never paint inside a code block)
+                if block.userState() != 1:
+                    match = CHECKBOX_PATTERN.match(text)
+                    if match:
+                        indent, _, status, _ = match.groups()
+                        c = QTextCursor(block)
+                        c.setPosition(block.position() + len(indent))
+                        rect = self.cursorRect(c)
+                        if rect.top() > vp_height:
+                            break
+                        if rect.bottom() >= 0:
+                            self._draw_checkbox(painter, rect, status.lower() == "x")
+
+                # Inline Math on inactive regular blocks (never inside tables or code blocks)
+                if (
+                    b_num != active_bn
+                    and block.userState() != 1
+                    and b_num not in self.highlighter._block_modes
+                    and ("$" in text or "\\(" in text)
+                ):
                     for m in INLINE_MATH_RE.finditer(text):
-                        expr = m.group(1)
+                        expr = m.group(1) if m.group(1) is not None else m.group(2)
                         c = QTextCursor(block)
                         c.setPosition(block.position() + m.start())
                         rect = self.cursorRect(c)
@@ -286,20 +335,64 @@ class MarkdownEditor(QTextEdit):
                 return s_blk, e_blk, r
         return None
 
+    def _link_at_pos(self, pos: QPointF) -> Optional[tuple[int, int, str]]:
+        """Return (start, end, url) if viewport position is over a Markdown link."""
+        cursor = self.cursorForPosition(pos.toPoint())
+        block = cursor.block()
+        if not block.isValid():
+            return None
+        offset = cursor.positionInBlock()
+        return find_link_at_offset(block.text(), offset)
+
+    def _open_url(self, url: str) -> None:
+        """Open a URL in the user's default web browser."""
+        clean_url = url.strip()
+        if not (
+            clean_url.startswith("http://")
+            or clean_url.startswith("https://")
+            or clean_url.startswith("mailto:")
+            or clean_url.startswith("file://")
+        ):
+            clean_url = "https://" + clean_url
+        QDesktopServices.openUrl(QUrl(clean_url))
+
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Show a pointing hand cursor when hovering over a checkbox or rendered preview card."""
+        """Show a pointing hand cursor when hovering over a checkbox, preview card, or link."""
         super().mouseMoveEvent(event)
+        pos = event.position()
         if (
-            self._checkbox_block_at_pos(event.position()) is not None
-            or self._region_at_pos(event.position()) is not None
+            self._checkbox_block_at_pos(pos) is not None
+            or self._region_at_pos(pos) is not None
         ):
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-        else:
-            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+            QToolTip.hideText()
+            return
+
+        link_info = self._link_at_pos(pos)
+        if link_info is not None:
+            _, _, url = link_info
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                f"Ctrl+Click or Ctrl+Enter to open {url}",
+                self.viewport(),
+            )
+            return
+
+        self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+        QToolTip.hideText()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle clicking directly on graphical checkboxes or rendered preview cards to edit."""
+        """Handle clicking directly on checkboxes, preview cards, or Ctrl+Click on links."""
         if event.button() == Qt.MouseButton.LeftButton:
+            # 0. Ctrl+Click on link -> open in browser
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                link_info = self._link_at_pos(event.position())
+                if link_info is not None:
+                    _, _, url = link_info
+                    self._open_url(url)
+                    return
+
             # 1. Checkbox click -> toggle
             block = self._checkbox_block_at_pos(event.position())
             if block is not None:
@@ -310,7 +403,9 @@ class MarkdownEditor(QTextEdit):
             reg = self._region_at_pos(event.position())
             if reg is not None:
                 s_blk, _, _ = reg
-                target_block = self.document().findBlockByNumber(s_blk)
+                target_block = self.document().findBlockByNumber(s_blk + 1)
+                if not target_block.isValid():
+                    target_block = self.document().findBlockByNumber(s_blk)
                 if target_block.isValid():
                     c = QTextCursor(target_block)
                     c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
@@ -440,11 +535,17 @@ class MarkdownEditor(QTextEdit):
                     self.viewport().update()
                     return
 
-        # 2. Ctrl+Enter: Toggle checkbox on current line or convert line into a checkbox
+        # 2. Ctrl+Enter: If on a link, open in browser. Otherwise toggle or create checkbox.
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier and event.key() in (
             Qt.Key.Key_Return,
             Qt.Key.Key_Enter,
         ):
+            link_info = find_link_at_offset(line_text, pos_in_block)
+            if link_info is not None:
+                _, _, url = link_info
+                self._open_url(url)
+                return
+
             if is_checkbox_line(line_text):
                 self._toggle_checkbox_at_block(block)
             else:

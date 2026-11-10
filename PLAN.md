@@ -65,16 +65,22 @@
   * Real-time `MarkdownHighlighter` scaling headers (H1: 24pt, H2: 19pt, H3: 16pt, H4: 14pt).
   * Automatically hides markdown syntax markers (`# `, `**`, `*`, `` ` ``, `~~`, `> `, `[](url)`) as soon as the cursor leaves the line, and reveals them when the cursor returns to the line.
 * 🟢 **`[Completed]`** **Interactive Checkboxes:**
-  * Click on `- [ ]` / `- [x]` immediately toggles state with instant strikethrough visual feedback.
+  * Click on `- [ ]` / `- [x]` immediately toggles state with dimmed text styling (`#787880`, no strikethrough line crossing).
   * `Ctrl+Enter` shortcut to toggle current line checkbox or convert line into a checkbox.
   * Smart `Enter` auto-continuation for checklists and bulleted/numbered lists.
   * `Tab` / `Shift+Tab` 2-space indentation.
+* 🟢 **`[Completed]`** **Interactive Links & Hover Actions:**
+  * Hovering over links (`[label](url)`) displays a pointing hand cursor and tooltip (`Ctrl+Click or Ctrl+Enter to open <url>`).
+  * `Ctrl+Click` or pressing `Ctrl+Enter` when on a link opens the URL in the system default web browser.
 * 🟢 **`[Completed]`** **Advanced Markdown: Styled Vector Tables (`utils/table.py`):**
   * Auto-formatting pipe tables with column alignment (`:---`, `:---:`, `---:`), alternating rows, and rounded card styling.
   * `Tab` to navigate cells, `Shift+Tab` to go to previous cell, `Enter` to auto-continue rows or auto-generate header separators.
+  * Mathematical notation cleanup in table cards (`Aᵀ`, `A⁻¹`, `det(A)`, `tr(A)`, `λᵢ`, `Iₙ`, `O(n²)`).
 * 🟢 **`[Completed]`** **Advanced Markdown: LaTeX Math Typesetting (`utils/math_engine.py`):**
   * Offline pure-Python recursive-descent math parser and typesetter.
-  * Inline math (`$...$`) and display math (`$$...$$`), fractions, roots, subscripts/superscripts, matrices (`pmatrix`, `bmatrix`, `vmatrix`), Greek symbols, and big operators (`∑`, `∫`, `∏`, `lim`).
+  * Delimiters: standard LaTeX `\[ ... \]` / `\\[ ... \\]` (display) and `\( ... \)` / `\\( ... \\)` (inline) in addition to `$$...$$` and `$..$`.
+  * `\boxed{...}` equation borders, `\mathbf{...}` bold glyphs/vectors, `bmatrix`, `pmatrix`, `vmatrix`.
+  * Fractions, roots, subscripts/superscripts, unescaped markdown subscripts (`\_`), Greek symbols, and big operators (`∑`, `∫`, `∏`, `lim`).
 * 🟢 **`[Completed]`** **Advanced Markdown: Mermaid Diagrams (`utils/mermaid_engine.py`):**
   * Native pure-Python vector renderer for Flowcharts/Graphs (`graph TD`/`LR`), Sequence Diagrams, State Diagrams, and Pie Charts.
   * Cursor-aware editing: collapses to vector preview on inactive blocks, reveals raw markdown for editing when clicked.

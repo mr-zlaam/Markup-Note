@@ -11,6 +11,10 @@ from PyQt6.QtGui import (
     QTextDocument,
 )
 
+from utils.code_engine import (
+    CodeRegion,
+    find_code_regions,
+)
 from utils.math_engine import (
     FENCE_DISPLAY_MATH_RE,
     INLINE_MATH_RE,
@@ -34,23 +38,26 @@ from utils.table import (
 
 HEADING_RE = re.compile(r"^(#{1,6})(\s+)(.*)$")
 CHECKBOX_RE = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
-QUOTE_RE = re.compile(r"^(>+\s*)(.*)$")
+QUOTE_RE = re.compile(r"^((?:>\s*)+)(.*)$")
 LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
-HR_RE = re.compile(r"^(\-{3,}|\*{3,}|_{3,})\s*$")
-FENCE_RE = re.compile(r"^\s*```.*$")
+HR_RE = re.compile(r"^(?:(?:\s*\*){3,}|\s*(?:-\s*){3,}|\s*(?:_\s*){3,})\s*$")
+FENCE_RE = re.compile(r"^\s*(?:>+\s*)*```.*$")
 
 BOLD_RE = re.compile(r"(\*\*|__)(.+?)\1")
 ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
 INLINE_CODE_RE = re.compile(r"(`)([^`\n]+)\1")
-STRIKE_RE = re.compile(r"(~~)(.+?)\1")
+STRIKE_RE = re.compile(r"(~{1,2})([^~\n]+?)\1")
 LINK_RE = re.compile(r"(\[)([^\]]+)(\]\([^)]+\))")
 TAG_RE = re.compile(r"(?:^|(?<=\s))(#[\w\d_-]+)")
+HTML_U_RE = re.compile(r"(<u>)(.+?)(</u>)", re.IGNORECASE)
+HTML_MARK_RE = re.compile(r"(<mark>)(.+?)(</mark>)", re.IGNORECASE)
+HTML_KBD_RE = re.compile(r"(<kbd>)(.+?)(</kbd>)", re.IGNORECASE)
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     """Applies live rich styling and hides markdown syntax on inactive lines and blocks."""
 
-    HEADING_SIZES = {1: 24, 2: 19, 3: 16, 4: 14, 5: 13, 6: 12}
+    HEADING_SIZES = {1: 28, 2: 24, 3: 20, 4: 18, 5: 16, 6: 15}
     HEADING_COLORS = {
         1: "#ffffff",
         2: "#f5f5f7",
@@ -66,6 +73,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.table_regions: List[TableRegion] = []
         self.math_regions: List[MathRegion] = []
         self.mermaid_regions: List[MermaidRegion] = []
+        self.code_regions: List[CodeRegion] = []
         self._block_modes: Dict[int, Tuple[str, int]] = {}
         self._init_formats()
 
@@ -147,10 +155,31 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.checkbox_prefix_format.setFontLetterSpacing(55.0)
         self.checkbox_prefix_format.setForeground(QColor(0, 0, 0, 0))
 
-        # Strikethrough (completed tasks & ~~strike~~)
+        # Strikethrough (~~strike~~)
         self.strike_format = QTextCharFormat()
         self.strike_format.setFontStrikeOut(True)
         self.strike_format.setForeground(QColor("#686868"))
+
+        # Checked task format (dimmed text, no strikethrough line)
+        self.checked_task_format = QTextCharFormat()
+        self.checked_task_format.setFontStrikeOut(False)
+        self.checked_task_format.setForeground(QColor("#787880"))
+
+        # HTML <u>
+        self.u_format = QTextCharFormat()
+        self.u_format.setFontUnderline(True)
+
+        # HTML <mark>
+        self.mark_format = QTextCharFormat()
+        self.mark_format.setBackground(QColor("#544614"))
+        self.mark_format.setForeground(QColor("#ffd60a"))
+
+        # HTML <kbd>
+        self.kbd_format = QTextCharFormat()
+        self.kbd_format.setFontFamilies(["monospace"])
+        self.kbd_format.setFontFixedPitch(True)
+        self.kbd_format.setBackground(QColor("#3a3a3c"))
+        self.kbd_format.setForeground(QColor("#f2f2f7"))
 
     def refresh_regions(self) -> Set[int]:
         """Re-scan document for tables, display math, and mermaid blocks, returning changed block numbers."""
@@ -162,15 +191,23 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.table_regions = find_table_regions(doc)
         self.math_regions = find_display_math_regions(doc)
         self.mermaid_regions = find_mermaid_regions(doc)
+        self.code_regions = find_code_regions(doc)
 
         new_modes: Dict[int, Tuple[str, int]] = {}
 
         # 1. Tables
         for tr in self.table_regions:
             active_in_table = tr.start_block <= self.active_block_number <= tr.end_block
-            mode = "active_table" if active_in_table else "inactive_table"
-            for b in range(tr.start_block, tr.end_block + 1):
-                new_modes[b] = (mode, 12)
+            if active_in_table:
+                for b in range(tr.start_block, tr.end_block + 1):
+                    new_modes[b] = ("active_table", 12)
+            else:
+                total_rows = 1 + len(tr.rows)
+                target_table_h = total_rows * 32.0 + 8.0
+                count = max(1, tr.end_block - tr.start_block + 1)
+                pt_size = max(12, int(round((target_table_h / count) * 0.58)))
+                for b in range(tr.start_block, tr.end_block + 1):
+                    new_modes[b] = ("inactive_table", pt_size)
 
         # 2. Display Math ($$ ... $$)
         for mr in self.math_regions:
@@ -210,6 +247,21 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 for b in range(mmd.start_block, mmd.end_block + 1):
                     new_modes[b] = ("inactive_mermaid", pt_size)
 
+        # 4. Code Blocks (```lang ... ```)
+        for cr in self.code_regions:
+            active_in_code = cr.start_block <= self.active_block_number <= cr.end_block
+            if active_in_code:
+                for b in range(cr.start_block, cr.end_block + 1):
+                    new_modes[b] = ("active_code", 14)
+            else:
+                header_h = 28.0
+                line_h = 22.0
+                total_code_h = header_h + len(cr.lines) * line_h + 16.0
+                count = max(1, cr.end_block - cr.start_block + 1)
+                pt_size = max(12, int(round((total_code_h / count) * 0.56)))
+                for b in range(cr.start_block, cr.end_block + 1):
+                    new_modes[b] = ("inactive_code", pt_size)
+
         self._block_modes = new_modes
         changed_blocks: Set[int] = set()
         all_keys = set(old_modes.keys()) | set(new_modes.keys())
@@ -217,6 +269,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             if old_modes.get(k) != new_modes.get(k):
                 changed_blocks.add(k)
         return changed_blocks
+
+    def _format(self, text: str, py_start: int, py_len: int, fmt: QTextCharFormat) -> None:
+        """Call self.setFormat converting Python char indices to Qt UTF-16 offsets."""
+        u16_start = len(text[:py_start].encode("utf-16-le")) // 2 if py_start > 0 else 0
+        u16_count = len(text[py_start : py_start + py_len].encode("utf-16-le")) // 2
+        self.setFormat(u16_start, u16_count, fmt)
 
     def highlightBlock(self, text: str) -> None:
         """Apply cursor-aware Obsidian-style highlighting to the current block."""
@@ -228,7 +286,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             mode, pt_size = self._block_modes[block_num]
             if mode == "inactive_table":
                 self.setCurrentBlockState(0)
-                self.setFormat(0, len(text), self.transparent_line_format)
+                tall_fmt = QTextCharFormat()
+                tall_fmt.setFontPointSize(pt_size)
+                tall_fmt.setForeground(QColor(0, 0, 0, 0))
+                self.setFormat(0, len(text), tall_fmt)
                 return
 
             if mode == "active_table":
@@ -241,14 +302,28 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                         self.setFormat(m.start(), 1, self.table_pipe_format)
                 return
 
-            if mode in ("inactive_math", "inactive_mermaid"):
-                self.setCurrentBlockState(0)
+            if mode in ("inactive_math", "inactive_mermaid", "inactive_code"):
+                is_closing_code = mode == "inactive_code" and any(cr.end_block == block_num for cr in self.code_regions)
+                self.setCurrentBlockState(0 if is_closing_code else (1 if mode == "inactive_code" else 0))
                 if len(text) > 0:
                     self.setFormat(0, len(text), self.hidden_format)
                     tall_fmt = QTextCharFormat()
                     tall_fmt.setFontPointSize(pt_size)
                     tall_fmt.setForeground(QColor(0, 0, 0, 0))
                     self.setFormat(0, 1, tall_fmt)
+                else:
+                    tall_fmt = QTextCharFormat()
+                    tall_fmt.setFontPointSize(pt_size)
+                    tall_fmt.setForeground(QColor(0, 0, 0, 0))
+                    self.setFormat(0, 0, tall_fmt)
+                return
+
+            if mode == "active_code":
+                self.setCurrentBlockState(1)
+                if FENCE_RE.match(text):
+                    self.setFormat(0, len(text), self.marker_format)
+                else:
+                    self.setFormat(0, len(text), self.code_block_format)
                 return
 
             if mode == "active_math":
@@ -257,10 +332,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 if FENCE_DISPLAY_MATH_RE.match(text):
                     self.setFormat(0, len(text), self.marker_format)
                 elif SINGLE_LINE_DISPLAY_MATH_RE.match(text):
-                    open_idx = text.find("$$")
-                    close_idx = text.rfind("$$")
-                    self.setFormat(open_idx, 2, self.marker_format)
-                    self.setFormat(close_idx, 2, self.marker_format)
+                    open_m = re.search(r"^\s*(\$\$|\\+\[)", text)
+                    close_m = re.search(r"(\$\$|\\+\])\s*$", text)
+                    if open_m:
+                        self.setFormat(open_m.start(1), len(open_m.group(1)), self.marker_format)
+                    if close_m:
+                        self.setFormat(close_m.start(1), len(close_m.group(1)), self.marker_format)
                 return
 
             if mode == "active_mermaid":
@@ -290,7 +367,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             hashes, spaces, _ = h_match.groups()
             level = len(hashes)
             prefix_len = len(hashes) + len(spaces)
-            base_point_size = self.HEADING_SIZES.get(level, 13)
+            base_point_size = self.HEADING_SIZES.get(level, 16)
             base_bold = True
             base_color = QColor(self.HEADING_COLORS.get(level, "#ffffff"))
 
@@ -298,14 +375,14 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             h_fmt.setFontPointSize(base_point_size)
             h_fmt.setFontWeight(QFont.Weight.Bold)
             h_fmt.setForeground(base_color)
-            self.setFormat(0, len(text), h_fmt)
+            self._format(text, 0, len(text), h_fmt)
 
             if is_active:
                 active_marker = QTextCharFormat(h_fmt)
                 active_marker.setForeground(QColor("#636366"))
-                self.setFormat(0, prefix_len, active_marker)
+                self._format(text, 0, prefix_len, active_marker)
             else:
-                self.setFormat(0, prefix_len, self.hidden_format)
+                self._format(text, 0, prefix_len, self.hidden_format)
 
         # 4. Checkboxes (- [ ] / - [] / - [x])
         cb_match = CHECKBOX_RE.match(text) if not h_match else None
@@ -314,30 +391,37 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             prefix_start = len(indent)
             prefix_len = len(prefix)
             is_checked = status.lower() == "x"
-            self.setFormat(prefix_start, prefix_len, self.checkbox_prefix_format)
+            self._format(text, prefix_start, prefix_len, self.checkbox_prefix_format)
 
             if is_checked:
                 text_start = prefix_start + prefix_len
-                self.setFormat(text_start, len(text) - text_start, self.strike_format)
-                return
+                self._format(text, text_start, len(text) - text_start, self.checked_task_format)
 
         # 5. Blockquotes (> quote)
         q_match = QUOTE_RE.match(text) if not (h_match or cb_match) else None
         if q_match:
             prefix = q_match.group(1)
-            self.setFormat(0, len(text), self.quote_format)
+            self._format(text, 0, len(text), self.quote_format)
             if is_active:
-                self.setFormat(0, len(prefix), self.quote_bar_format)
+                self._format(text, 0, len(prefix), self.quote_bar_format)
             else:
-                self.setFormat(0, len(prefix), self.hidden_format)
+                self._format(text, 0, len(prefix), self.hidden_format)
+
+            # Check if content inside blockquote is a list
+            inner_text = text[len(prefix):]
+            inner_list = LIST_RE.match(inner_text)
+            if inner_list:
+                l_indent, l_marker, l_sp, _ = inner_list.groups()
+                m_start = len(prefix) + len(l_indent)
+                self._format(text, m_start, len(l_marker) + len(l_sp), self.list_marker_format)
 
         # 6. Standard Bullet / Numbered Lists (- item, 1. item)
         list_match = LIST_RE.match(text) if not (h_match or cb_match or q_match) else None
         if list_match:
             indent, marker, space, _ = list_match.groups()
-            self.setFormat(len(indent), len(marker) + len(space), self.list_marker_format)
+            self._format(text, len(indent), len(marker) + len(space), self.list_marker_format)
 
-        # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), $math$, #tag)
+        # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), $math$, HTML, #tag)
         self._apply_inline_rules(text, is_active, base_point_size, base_bold, base_color)
 
     def _apply_inline_rules(
@@ -358,8 +442,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt.setFontPointSize(base_point_size)
             fmt.setFontWeight(QFont.Weight.Bold)
             fmt.setForeground(QColor("#ffffff"))
-            self.setFormat(start + marker_len, (end - start) - 2 * marker_len, fmt)
-            self._format_markers(start, end, marker_len, is_active, base_point_size)
+            self._format(text, start + marker_len, (end - start) - 2 * marker_len, fmt)
+            self._format_markers(text, start, end, marker_len, is_active, base_point_size)
 
         # Italic: *text*
         for m in ITALIC_RE.finditer(text):
@@ -371,8 +455,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt.setFontWeight(QFont.Weight.Bold)
             fmt.setFontItalic(True)
             fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
-            self.setFormat(start + 1, (end - start) - 2, fmt)
-            self._format_markers(start, end, 1, is_active, base_point_size)
+            self._format(text, start + 1, (end - start) - 2, fmt)
+            self._format_markers(text, start, end, 1, is_active, base_point_size)
 
         # Inline code: `code`
         for m in INLINE_CODE_RE.finditer(text):
@@ -380,38 +464,87 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             fmt = QTextCharFormat(self.inline_code_format)
             if base_point_size:
                 fmt.setFontPointSize(base_point_size)
-            self.setFormat(start + 1, (end - start) - 2, fmt)
-            self._format_markers(start, end, 1, is_active, base_point_size)
+            self._format(text, start + 1, (end - start) - 2, fmt)
+            self._format_markers(text, start, end, 1, is_active, base_point_size)
 
-        # Inline Math: $...$
+        # Inline Math: $...$ or \(...\)
         for m in INLINE_MATH_RE.finditer(text):
             start, end = m.span()
-            expr = m.group(1)
+            if m.group(1) is not None:
+                expr = m.group(1)
+                open_len = 1
+                close_len = 1
+            else:
+                expr = m.group(2)
+                open_len = m.start(2) - start
+                close_len = end - m.end(2)
+
             if is_active:
                 fmt = QTextCharFormat(self.math_source_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
-                self.setFormat(start + 1, (end - start) - 2, fmt)
-                self._format_markers(start, end, 1, is_active=True, base_point_size=base_point_size)
+                self._format(text, start + open_len, (end - close_len) - (start + open_len), fmt)
+                self._format(text, start, open_len, self.marker_format)
+                self._format(text, end - close_len, close_len, self.marker_format)
             else:
                 pix = render_math_to_pixmap(expr, font_size=15.0, display_mode=False)
                 target_w = pix.width() / pix.devicePixelRatio()
                 span_len = max(1, end - start)
-                self.setFormat(start, span_len, self.hidden_format)
+                self._format(text, start, span_len, self.hidden_format)
                 spacer_fmt = QTextCharFormat()
                 spacer_fmt.setForeground(QColor(0, 0, 0, 0))
                 spacer_fmt.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
                 spacer_fmt.setFontLetterSpacing(max(0.0, target_w - 6.0))
-                self.setFormat(start, 1, spacer_fmt)
+                self._format(text, start, 1, spacer_fmt)
 
-        # Strikethrough: ~~text~~
+        # Strikethrough: ~~text~~ or ~text~
         for m in STRIKE_RE.finditer(text):
+            tildes = len(m.group(1))
             start, end = m.span()
             fmt = QTextCharFormat(self.strike_format)
             if base_point_size:
                 fmt.setFontPointSize(base_point_size)
-            self.setFormat(start + 2, (end - start) - 4, fmt)
-            self._format_markers(start, end, 2, is_active, base_point_size)
+            self._format(text, start + tildes, (end - start) - 2 * tildes, fmt)
+            self._format_markers(text, start, end, tildes, is_active, base_point_size)
+
+        # HTML <u>text</u>
+        for m in HTML_U_RE.finditer(text):
+            g1_s, g1_e = m.span(1)
+            g2_s, g2_e = m.span(2)
+            g3_s, g3_e = m.span(3)
+            fmt = QTextCharFormat(self.u_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self._format(text, g2_s, g2_e - g2_s, fmt)
+            syn_fmt = self.marker_format if is_active else self.hidden_format
+            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
+
+        # HTML <mark>text</mark>
+        for m in HTML_MARK_RE.finditer(text):
+            g1_s, g1_e = m.span(1)
+            g2_s, g2_e = m.span(2)
+            g3_s, g3_e = m.span(3)
+            fmt = QTextCharFormat(self.mark_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self._format(text, g2_s, g2_e - g2_s, fmt)
+            syn_fmt = self.marker_format if is_active else self.hidden_format
+            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
+
+        # HTML <kbd>text</kbd>
+        for m in HTML_KBD_RE.finditer(text):
+            g1_s, g1_e = m.span(1)
+            g2_s, g2_e = m.span(2)
+            g3_s, g3_e = m.span(3)
+            fmt = QTextCharFormat(self.kbd_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self._format(text, g2_s, g2_e - g2_s, fmt)
+            syn_fmt = self.marker_format if is_active else self.hidden_format
+            self._format(text, g1_s, g1_e - g1_s, syn_fmt)
+            self._format(text, g3_s, g3_e - g3_s, syn_fmt)
 
         # Links: [text](url)
         for m in LINK_RE.finditer(text):
@@ -421,19 +554,20 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             fmt = QTextCharFormat(self.link_format)
             if base_point_size:
                 fmt.setFontPointSize(base_point_size)
-            self.setFormat(g2_start, g2_end - g2_start, fmt)
+            self._format(text, g2_start, g2_end - g2_start, fmt)
             syntax_fmt = self.marker_format if is_active else self.hidden_format
-            self.setFormat(g1_start, g1_end - g1_start, syntax_fmt)
-            self.setFormat(g3_start, g3_end - g3_start, syntax_fmt)
+            self._format(text, g1_start, g1_end - g1_start, syntax_fmt)
+            self._format(text, g3_start, g3_end - g3_start, syntax_fmt)
 
         # Tags: #tag (not headings)
         if not base_point_size:
             for m in TAG_RE.finditer(text):
                 start, end = m.span(1)
-                self.setFormat(start, end - start, self.tag_format)
+                self._format(text, start, end - start, self.tag_format)
 
     def _format_markers(
         self,
+        text: str,
         start: int,
         end: int,
         marker_len: int,
@@ -445,11 +579,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             m_fmt = QTextCharFormat(self.marker_format)
             if base_point_size:
                 m_fmt.setFontPointSize(base_point_size)
-            self.setFormat(start, marker_len, m_fmt)
-            self.setFormat(end - marker_len, marker_len, m_fmt)
+            self._format(text, start, marker_len, m_fmt)
+            self._format(text, end - marker_len, marker_len, m_fmt)
         else:
-            self.setFormat(start, marker_len, self.hidden_format)
-            self.setFormat(end - marker_len, marker_len, self.hidden_format)
+            self._format(text, start, marker_len, self.hidden_format)
+            self._format(text, end - marker_len, marker_len, self.hidden_format)
 
     def _handle_code_blocks(self, text: str, is_active: bool) -> bool:
         """Handle multi-line fenced code blocks (```)."""

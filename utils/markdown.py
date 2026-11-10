@@ -5,6 +5,19 @@ from typing import Optional, Tuple
 
 CHECKBOX_PATTERN = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
 LIST_PATTERN = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
+LINK_PATTERN = re.compile(
+    r"\[(?P<label>[^\]]+)\]\((?P<url>[^\s)]+)\)|<(?P<autourl>https?://[^\s>]+)>|(?P<rawurl>https?://[^\s<>\)\]]+)"
+)
+
+
+def find_link_at_offset(text: str, offset: int) -> Optional[Tuple[int, int, str]]:
+    """Return (start, end, url) if offset falls within a Markdown link or URL in text."""
+    for m in LINK_PATTERN.finditer(text):
+        start, end = m.span()
+        if start <= offset <= end:
+            url = m.group("url") or m.group("autourl") or m.group("rawurl")
+            return start, end, url
+    return None
 
 
 def is_checkbox_line(line: str) -> bool:

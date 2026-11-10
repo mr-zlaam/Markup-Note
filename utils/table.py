@@ -17,7 +17,48 @@ from PyQt6.QtGui import (
 
 TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 TABLE_SEP_CELL_RE = re.compile(r"^\s*:?-{2,}:?\s*$")
-INLINE_CLEAN_RE = re.compile(r"(\*\*|__|~~|`|\*)")
+
+
+def clean_cell_text(text: str) -> str:
+    """Clean markdown links, escaped symbols, and inline markers for table cell rendering."""
+    # 1. Clean markdown links [label](url) -> label
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # 2. Clean LaTeX parallel / norm before table pipe unescaping
+    s = re.sub(r"\\+parallel\b|\\{2,}\|", "∥", s)
+    s = s.replace(r"\|", "|").replace(r"\$", "$")
+    # 3. Clean markdown delimiters **, __, ~~, `, *
+    s = re.sub(r"(\*\*|__|~~|`|\*)", "", s)
+    # 4. Clean LaTeX inline delimiters \\( ... \\), \( ... \), and $ ... $
+    s = re.sub(r"\\+\((.+?)\\+\)", r"\1", s)
+    s = re.sub(r"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$", r"\1", s)
+    # 5. Clean LaTeX commands in table cells
+    s = re.sub(r"\\(?:operatorname|mathrm|mathbf|textbf|text)\{([^}]+)\}", r"\1", s)
+    s = re.sub(r"\\det(?=[^a-zA-Z]|$)", "det", s)
+    s = re.sub(r"\\log(?=[^a-zA-Z]|$)", "log", s)
+    s = re.sub(r"\\ln(?=[^a-zA-Z]|$)", "ln", s)
+    s = re.sub(r"\\lambda(?=[^a-zA-Z]|$)", "λ", s)
+    s = re.sub(r"\\mu(?=[^a-zA-Z]|$)", "μ", s)
+    s = re.sub(r"\\pi(?=[^a-zA-Z]|$)", "π", s)
+    s = re.sub(r"\\cdot(?=[^a-zA-Z]|$)", "·", s)
+    s = re.sub(r"\\(?:parallel|\\\|)", "∥", s)
+    s = re.sub(r"\\_", "_", s)
+    # 6. Pretty superscripts and subscripts
+    sub_map = {
+        "^T": "ᵀ",
+        "^{-1}": "⁻¹",
+        "^-1": "⁻¹",
+        "^2": "²",
+        "^3": "³",
+        "^n": "ⁿ",
+        "_i": "ᵢ",
+        "_n": "ₙ",
+        "_0": "₀",
+        "_1": "₁",
+        "_2": "₂",
+    }
+    for k, v in sub_map.items():
+        s = s.replace(k, v)
+    return s.strip()
 
 
 @dataclass
@@ -47,13 +88,31 @@ def is_table_separator(line: str) -> bool:
 
 
 def split_table_cells(line: str) -> List[str]:
-    """Extract stripped cell strings from a pipe-delimited table row."""
+    r"""Extract stripped cell strings from a pipe-delimited table row, respecting escaped pipes \|."""
     stripped = line.strip()
     if stripped.startswith("|"):
         stripped = stripped[1:]
-    if stripped.endswith("|"):
+    if stripped.endswith("|") and not stripped.endswith(r"\|"):
         stripped = stripped[:-1]
-    return [cell.strip() for cell in stripped.split("|")]
+
+    cells: List[str] = []
+    current: List[str] = []
+    escaped = False
+
+    for ch in stripped:
+        if escaped:
+            current.append(ch)
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+            current.append(ch)
+        elif ch == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    cells.append("".join(current).strip())
+    return cells
 
 
 def parse_alignments(sep_line: str, num_cols: int) -> List[Qt.AlignmentFlag]:
@@ -223,19 +282,20 @@ def render_table(
 
     natural_widths: List[float] = []
     for c_idx in range(num_cols):
-        h_text = INLINE_CLEAN_RE.sub("", region.headers[c_idx])
-        max_w = fm_h.horizontalAdvance(h_text) + 28.0
+        h_text = clean_cell_text(region.headers[c_idx])
+        h_w = fm_h.horizontalAdvance(h_text) + 24.0
+        col_w = max(70.0, h_w)
         for _, r_cells in region.rows:
             if c_idx < len(r_cells):
-                c_text = INLINE_CLEAN_RE.sub("", r_cells[c_idx])
-                max_w = max(max_w, fm_b.horizontalAdvance(c_text) + 28.0)
-        natural_widths.append(max(70.0, max_w))
+                c_text = clean_cell_text(r_cells[c_idx])
+                col_w = max(col_w, min(240.0, fm_b.horizontalAdvance(c_text) + 24.0))
+        natural_widths.append(col_w)
 
     total_natural = sum(natural_widths)
-    avail_width = min(table_rect.width(), max(total_natural, min(table_rect.width(), num_cols * 130.0)))
-    col_widths = [(w / total_natural) * avail_width for w in natural_widths]
+    target_w = max(table_rect.width(), total_natural)
+    col_widths = [(w / total_natural) * target_w for w in natural_widths]
 
-    actual_rect = QRectF(table_rect.left(), table_rect.top(), avail_width, table_rect.height())
+    actual_rect = QRectF(table_rect.left(), table_rect.top(), target_w, table_rect.height())
 
     # Outer table card background & border
     painter.setPen(Qt.PenStyle.NoPen)
@@ -243,13 +303,13 @@ def render_table(
     painter.drawRoundedRect(actual_rect, 6.0, 6.0)
 
     # Header background (top rounded)
-    header_rect = QRectF(actual_rect.left(), actual_rect.top(), avail_width, row_height)
+    header_rect = QRectF(actual_rect.left(), actual_rect.top(), target_w, row_height)
     painter.setBrush(QBrush(QColor("#2a2a30")))
     painter.drawRoundedRect(header_rect, 6.0, 6.0)
     if len(region.rows) > 0:
         # Square off bottom corners of header
         painter.drawRect(
-            QRectF(actual_rect.left(), actual_rect.top() + row_height - 6.0, avail_width, 6.0)
+            QRectF(actual_rect.left(), actual_rect.top() + row_height - 6.0, target_w, 6.0)
         )
 
     hit_cells: List[Tuple[int, int, QRectF]] = []
@@ -257,13 +317,13 @@ def render_table(
     # Draw alternating row backgrounds
     for r_idx in range(len(region.rows)):
         y = actual_rect.top() + (r_idx + 1) * row_height
-        r_rect = QRectF(actual_rect.left(), y, avail_width, row_height)
+        r_rect = QRectF(actual_rect.left(), y, target_w, row_height)
         if r_idx % 2 == 1:
             painter.setBrush(QBrush(QColor("#242429")))
             painter.setPen(Qt.PenStyle.NoPen)
             if r_idx == len(region.rows) - 1:
                 painter.drawRoundedRect(r_rect, 6.0, 6.0)
-                painter.drawRect(QRectF(actual_rect.left(), y, avail_width, 6.0))
+                painter.drawRect(QRectF(actual_rect.left(), y, target_w, 6.0))
             else:
                 painter.drawRect(r_rect)
 
@@ -276,8 +336,9 @@ def render_table(
         c_rect = QRectF(x_cursor, actual_rect.top(), w, row_height)
         hit_cells.append((region.start_block, c_idx, c_rect))
         text_rect = c_rect.adjusted(10.0, 0.0, -10.0, 0.0)
-        clean_text = INLINE_CLEAN_RE.sub("", region.headers[c_idx])
-        painter.drawText(text_rect, int(region.alignments[c_idx]), clean_text)
+        clean_text = clean_cell_text(region.headers[c_idx])
+        elided = fm_h.elidedText(clean_text, Qt.TextElideMode.ElideRight, int(w - 18.0))
+        painter.drawText(text_rect, int(region.alignments[c_idx]), elided)
         x_cursor += w
 
     # Draw Body Cells
@@ -292,8 +353,9 @@ def render_table(
             hit_cells.append((block_num, c_idx, c_rect))
             text_rect = c_rect.adjusted(10.0, 0.0, -10.0, 0.0)
             cell_val = r_cells[c_idx] if c_idx < len(r_cells) else ""
-            clean_text = INLINE_CLEAN_RE.sub("", cell_val)
-            painter.drawText(text_rect, int(region.alignments[c_idx]), clean_text)
+            clean_text = clean_cell_text(cell_val)
+            elided = fm_b.elidedText(clean_text, Qt.TextElideMode.ElideRight, int(w - 18.0))
+            painter.drawText(text_rect, int(region.alignments[c_idx]), elided)
             x_cursor += w
 
     # Grid lines & outer border

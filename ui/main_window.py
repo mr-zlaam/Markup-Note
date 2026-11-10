@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import QFileSystemWatcher, Qt
+from PyQt6.QtCore import QFileSystemWatcher, QTimer, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
         self._current_folder: Optional[Path] = None
         self._current_note: Optional[Note] = None
         self._all_current_notes: List[Note] = []
+        self._is_saving_internally: bool = False
 
         # File system watcher for external edits
         self.watcher = QFileSystemWatcher(parent=self)
@@ -108,11 +109,17 @@ class MainWindow(QMainWindow):
             self.watcher.addPaths(dirs_to_watch)
 
     def _on_external_change(self, path: str) -> None:
-        """Handle external changes to notes directory."""
+        """Handle external changes to notes directory without interrupting active typing."""
+        if self._is_saving_internally:
+            return
         current_path = str(self._current_note.path) if self._current_note else None
-        self._refresh_notes(preserve_path=current_path)
+        self._refresh_notes(preserve_path=current_path, emit_selection=False)
 
-    def _refresh_notes(self, preserve_path: Optional[str] = None) -> None:
+    def _clear_saving_flag(self) -> None:
+        """Reset internal saving guard flag."""
+        self._is_saving_internally = False
+
+    def _refresh_notes(self, preserve_path: Optional[str] = None, emit_selection: bool = True) -> None:
         """Reload notes for the current folder."""
         self._all_current_notes = self.storage.list_notes(self._current_folder)
         query = self.note_list.search_bar.text().strip().lower()
@@ -125,10 +132,14 @@ class MainWindow(QMainWindow):
         else:
             filtered = self._all_current_notes
 
-        self.note_list.set_notes(filtered, preserve_selection_path=preserve_path)
+        self.note_list.set_notes(
+            filtered,
+            preserve_selection_path=preserve_path,
+            emit_selection=emit_selection,
+        )
 
         # If list is empty, clear editor
-        if not filtered:
+        if not filtered and emit_selection:
             self._current_note = None
             self.editor.load_note(None)
 
@@ -142,34 +153,46 @@ class MainWindow(QMainWindow):
             folders = self.storage.get_folders()
             self.sidebar.set_folders(folders, current_selection=new_folder)
             self._current_folder = new_folder
+            self._update_watcher_paths()
             self._refresh_notes()
 
     def _on_note_selected(self, note: Note) -> None:
+        if self._current_note is not None and self._current_note.path == note.path:
+            return
         self._current_note = note
         self.editor.load_note(note)
 
     def _on_create_note(self) -> None:
+        self._is_saving_internally = True
         new_note = self.storage.create_note(folder=self._current_folder)
         if new_note is not None:
-            self._refresh_notes(preserve_path=str(new_note.path))
+            self._current_note = None
+            self._refresh_notes(preserve_path=str(new_note.path), emit_selection=True)
             self.editor.editor.setFocus()
+        QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_create_note_with_content(self, initial_content: str) -> None:
         """Create a new note with typed content when user writes on empty canvas."""
+        self._is_saving_internally = True
         title, _ = Note.parse_title_and_snippet(initial_content, fallback_title="New Note")
         new_note = self.storage.create_note(folder=self._current_folder, initial_title=title)
         if new_note is not None:
             self.storage.save_note_content(new_note.path, initial_content)
             self._current_note = Note.from_file(new_note.path)
-            self._refresh_notes(preserve_path=str(new_note.path))
+            if self._current_note is not None:
+                self.editor.update_meta(self._current_note)
+                self._refresh_notes(preserve_path=str(new_note.path), emit_selection=False)
+        QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_content_saved(self, new_content: str) -> None:
         if self._current_note is None:
             return
 
+        self._is_saving_internally = True
         current_path = self._current_note.path
         success = self.storage.save_note_content(current_path, new_content)
         if not success:
+            self._is_saving_internally = False
             return
 
         # Update note model
@@ -180,12 +203,14 @@ class MainWindow(QMainWindow):
         # Rename file if title changed
         renamed_path = self.storage.rename_note_file(current_path, new_title)
 
-        # Update current note instance
+        # Update current note instance and card in-place without reloading editor
         self._current_note = Note.from_file(renamed_path)
         if self._current_note is not None:
-            self.editor._current_note = self._current_note
-            # Refresh list preserving selection without jitter
-            self._refresh_notes(preserve_path=str(renamed_path))
+            self.editor.update_meta(self._current_note)
+            self.note_list.update_note_card(str(current_path), self._current_note)
+            self._all_current_notes = self.storage.list_notes(self._current_folder)
+
+        QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_delete_note(self) -> None:
         if self._current_note is None:

@@ -3,7 +3,7 @@
 import re
 from typing import Optional, Tuple
 
-CHECKBOX_PATTERN = re.compile(r"^(\s*[-*+]\s*\[)([ xX])(\]\s*)(.*)$")
+CHECKBOX_PATTERN = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
 LIST_PATTERN = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
 
 
@@ -12,24 +12,23 @@ def is_checkbox_line(line: str) -> bool:
     return CHECKBOX_PATTERN.match(line) is not None
 
 
-def get_checkbox_info(line: str) -> Optional[Tuple[int, int, bool]]:
-    """Return (start_idx, end_idx, is_checked) of the checkbox bracket if present.
+def get_checkbox_info(line: str) -> Optional[Tuple[int, int, int, bool]]:
+    """Return (bracket_start, bracket_end, prefix_end, is_checked) if present.
 
     Example:
-        For "- [ ] task", returns (2, 5, False) corresponding to "[ ]"
+        For "- [ ] task", returns (2, 5, 6, False)
+        For "- [] task", returns (2, 4, 5, False)
     """
     match = CHECKBOX_PATTERN.match(line)
     if not match:
         return None
 
-    prefix = match.group(1)
-    status_char = match.group(2)
-    start_pos = len(prefix) - 1  # character position of the space or 'x'
+    indent, prefix, status_char, _ = match.groups()
     is_checked = status_char.lower() == "x"
-    # The checkbox bounds are from the bracket start to closing bracket
-    bracket_start = line.find("[")
+    bracket_start = line.find("[", len(indent))
     bracket_end = line.find("]", bracket_start) + 1
-    return bracket_start, bracket_end, is_checked
+    prefix_end = len(indent) + len(prefix)
+    return bracket_start, bracket_end, prefix_end, is_checked
 
 
 def toggle_checkbox_line(line: str) -> str:
@@ -38,9 +37,10 @@ def toggle_checkbox_line(line: str) -> str:
     if not match:
         return line
 
-    prefix, status_char, suffix, rest = match.groups()
+    indent, prefix, status_char, rest = match.groups()
+    marker = prefix.strip()[0]
     new_char = " " if status_char.lower() == "x" else "x"
-    return f"{prefix}{new_char}{suffix}{rest}"
+    return f"{indent}{marker} [{new_char}] {rest}"
 
 
 def get_auto_continue_prefix(line: str) -> Optional[str]:
@@ -54,12 +54,11 @@ def get_auto_continue_prefix(line: str) -> Optional[str]:
     # Checkbox item
     cb_match = CHECKBOX_PATTERN.match(line)
     if cb_match:
-        prefix, _, suffix, rest = cb_match.groups()
+        indent, prefix, _, rest = cb_match.groups()
         if not rest.strip():
             # Empty checkbox item -> terminate list
             return ""
         # Return new unchecked box for next line with same indent
-        indent = re.match(r"^\s*", prefix).group(0)
         marker = prefix.strip()[0]  # '-', '*', or '+'
         return f"{indent}{marker} [ ] "
 

@@ -91,8 +91,6 @@ QTextEdit#MarkdownEditor, QPlainTextEdit#MarkdownEditor {
     color: #e6e6e6;
     border: none;
     padding: 24px 36px;
-    font-size: 15px;
-    line-height: 1.6;
     selection-background-color: #0a84ff;
     selection-color: #ffffff;
 }

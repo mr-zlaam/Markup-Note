@@ -60,9 +60,10 @@
 ---
 
 ### Phase 4: Obsidian-Style In-Editor Live Preview & Interactive Checkboxes (`ui/editor.py`)
-* 🟢 **`[Completed]`** **Live In-Editor Markdown Formatting:**
-  * Real-time `MarkdownHighlighter` scaling headers (H1: 20pt, H2: 17pt, H3: 15pt).
-  * In-place styling for bold, italic, code blocks, blockquotes, horizontal rules, tags, and links.
+* 🟢 **`[Completed]`** **Cursor-Aware Live Markdown Formatting (`ui/highlighter.py`):**
+  * Pure plain-text buffer (`toPlainText()` / `setPlainText()`)—never mutates or escapes user text.
+  * Real-time `MarkdownHighlighter` scaling headers (H1: 24pt, H2: 19pt, H3: 16pt, H4: 14pt).
+  * Automatically hides markdown syntax markers (`# `, `**`, `*`, `` ` ``, `~~`, `> `, `[](url)`) as soon as the cursor leaves the line, and reveals them when the cursor returns to the line.
 * 🟢 **`[Completed]`** **Interactive Checkboxes:**
   * Click on `- [ ]` / `- [x]` immediately toggles state with instant strikethrough visual feedback.
   * `Ctrl+Enter` shortcut to toggle current line checkbox or convert line into a checkbox.
@@ -71,15 +72,15 @@
 
 ---
 
-### Phase 5: Floating Slash (`/`) Command Palette (`ui/slash_menu.py`)
-* 🟢 **`[Completed]`** **Trigger Detection:**
-  * Automatically detects `/` typed at the start of a line or after whitespace.
-* 🟢 **`[Completed]`** **Floating Cursor-Aligned Popup:**
-  * Calculates `cursorRect()` and floats cleanly directly under the text cursor.
-* 🟢 **`[Completed]`** **Real-Time Search & Markdown Actions:**
-  * Filter as you type across H1, H2, H3, To-do Checkbox, Bullet list, Numbered list, Code block, Quote, and Divider.
-* 🟢 **`[Completed]`** **Seamless Keyboard Control:**
-  * `Up` / `Down` arrows to navigate, `Enter` to insert, `Escape` or clicking away to dismiss.
+### Phase 5: Floating Slash (`/`) Command Palette (`ui/slash_menu.py`) *(Deferred until after core editor stabilization)*
+* ⚪ **`[Planned]`** **Trigger Detection:**
+  * Detect `/` typed at the start of a line.
+* ⚪ **`[Planned]`** **Floating Cursor-Aligned Popup:**
+  * Float cleanly directly under the text cursor.
+* ⚪ **`[Planned]`** **Real-Time Search & Markdown Actions:**
+  * Filter across H1, H2, H3, To-do Checkbox, Bullet list, Numbered list, Code block, Quote, and Divider.
+* ⚪ **`[Planned]`** **Seamless Keyboard Control:**
+  * `Up` / `Down` arrows to navigate, `Enter` to insert, `Escape` to dismiss.
 
 ---
 

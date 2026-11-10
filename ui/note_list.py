@@ -135,7 +135,12 @@ class NoteListPanel(QWidget):
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.list_widget)
 
-    def set_notes(self, notes: List[Note], preserve_selection_path: Optional[str] = None) -> None:
+    def set_notes(
+        self,
+        notes: List[Note],
+        preserve_selection_path: Optional[str] = None,
+        emit_selection: bool = True,
+    ) -> None:
         """Update the list with note items."""
         self._notes = notes
         self.list_widget.blockSignals(True)
@@ -157,9 +162,20 @@ class NoteListPanel(QWidget):
 
         self.list_widget.blockSignals(False)
 
-        # Trigger selection for currently selected row
-        if self.list_widget.currentItem() is not None:
+        # Trigger selection for currently selected row if requested
+        if emit_selection and self.list_widget.currentItem() is not None:
             self._on_selection_changed()
+
+    def update_note_card(self, old_path_str: str, updated_note: Note) -> None:
+        """Update an existing note card in-place without emitting selection signals."""
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            if item is not None:
+                existing: Optional[Note] = item.data(Qt.ItemDataRole.UserRole)
+                if existing is not None and str(existing.path) in (old_path_str, str(updated_note.path)):
+                    item.setData(Qt.ItemDataRole.UserRole, updated_note)
+                    break
+        self.list_widget.viewport().update()
 
     def get_selected_note(self) -> Optional[Note]:
         """Return the currently selected Note, if any."""

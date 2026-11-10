@@ -64,15 +64,23 @@ class Note:
 
         # First line is title
         raw_first = non_empty[0]
-        title = re.sub(r"^#+\s*", "", raw_first).strip()
+        title = re.sub(
+            r"^(\s*[-*+]\s*\[[ xX]?\]\s*|\s*\\?#+\s*|\s*>+\s*)", "", raw_first
+        ).strip()
+        title = re.sub(r"(\*\*|__|~~|`|\*)", "", title).strip()
         if not title:
             title = fallback_title
 
         # Collect subsequent lines for the snippet
         snippet_lines = []
         for line in non_empty[1:]:
-            # Clean common markdown markers from snippet (checkboxes, bullets, headers)
-            cleaned = re.sub(r"^(-\s*\[[ xX]\]|[-*+]\s*|\d+\.\s*|#+\s*|>+\s*)", "", line).strip()
+            # Clean common markdown markers from snippet (checkboxes, bullets, headers, inline markers)
+            cleaned = re.sub(
+                r"^(\s*[-*+]\s*\[[ xX]?\]\s*|\s*[-*+]\s*|\s*\d+\.\s*|\s*\\?#+\s*|\s*>+\s*)",
+                "",
+                line,
+            ).strip()
+            cleaned = re.sub(r"(\*\*|__|~~|`|\*)", "", cleaned).strip()
             if cleaned:
                 snippet_lines.append(cleaned)
             if len(snippet_lines) >= 2:

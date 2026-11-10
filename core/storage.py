@@ -77,7 +77,7 @@ class StorageManager:
             file_path = target_dir / f"{base_name} {counter}.md"
             counter += 1
 
-        initial_content = f"# {initial_title}\n\n"
+        initial_content = ""
         if self.save_note_content(file_path, initial_content):
             return Note.from_file(file_path)
         return None

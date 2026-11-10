@@ -1,73 +1,88 @@
-"""Obsidian-style in-editor syntax highlighter for Markdown in PyQt6."""
+"""Obsidian-style cursor-aware Markdown syntax highlighter for PyQt6."""
 
 import re
-from typing import List, Tuple
+from typing import Optional
 
-from PyQt6.QtCore import QRegularExpression
-from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextDocument,
+)
+
+HEADING_RE = re.compile(r"^(#{1,6})(\s+)(.*)$")
+CHECKBOX_RE = re.compile(r"^(\s*)([-*+]\s*\[([ xX]?)\]\s?)(.*)$")
+QUOTE_RE = re.compile(r"^(>+\s*)(.*)$")
+LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.)(\s+)(.*)$")
+HR_RE = re.compile(r"^(\-{3,}|\*{3,}|_{3,})\s*$")
+FENCE_RE = re.compile(r"^\s*```.*$")
+
+BOLD_RE = re.compile(r"(\*\*|__)(.+?)\1")
+ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+INLINE_CODE_RE = re.compile(r"(`)([^`\n]+)\1")
+STRIKE_RE = re.compile(r"(~~)(.+?)\1")
+LINK_RE = re.compile(r"(\[)([^\]]+)(\]\([^)]+\))")
+TAG_RE = re.compile(r"(?:^|(?<=\s))(#[\w\d_-]+)")
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
-    """Applies live rich styling to markdown directly within the editor canvas."""
+    """Applies live rich styling and hides markdown syntax on inactive lines."""
+
+    HEADING_SIZES = {1: 24, 2: 19, 3: 16, 4: 14, 5: 13, 6: 12}
+    HEADING_COLORS = {
+        1: "#ffffff",
+        2: "#f5f5f7",
+        3: "#e5e5ea",
+        4: "#d1d1d6",
+        5: "#c7c7cc",
+        6: "#aeaeb2",
+    }
 
     def __init__(self, parent: QTextDocument) -> None:
         super().__init__(parent)
-        self._highlighting_rules: List[Tuple[QRegularExpression, QTextCharFormat]] = []
+        self.active_block_number: int = 0
         self._init_formats()
-        self._init_rules()
 
     def _init_formats(self) -> None:
-        # Heading 1
-        self.h1_format = QTextCharFormat()
-        self.h1_format.setFontPointSize(20)
-        self.h1_format.setFontWeight(QFont.Weight.Bold)
-        self.h1_format.setForeground(QColor("#ffffff"))
+        # Format used to collapse and hide markdown syntax markers on inactive lines
+        self.hidden_format = QTextCharFormat()
+        self.hidden_format.setFontPointSize(1)
+        self.hidden_format.setForeground(QColor(0, 0, 0, 0))
 
-        # Heading 2
-        self.h2_format = QTextCharFormat()
-        self.h2_format.setFontPointSize(17)
-        self.h2_format.setFontWeight(QFont.Weight.Bold)
-        self.h2_format.setForeground(QColor("#f2f2f7"))
+        # Muted syntax marker format when cursor is on the active line
+        self.marker_format = QTextCharFormat()
+        self.marker_format.setForeground(QColor("#636366"))
 
-        # Heading 3
-        self.h3_format = QTextCharFormat()
-        self.h3_format.setFontPointSize(15)
-        self.h3_format.setFontWeight(QFont.Weight.Bold)
-        self.h3_format.setForeground(QColor("#e5e5ea"))
-
-        # Heading 4-6
-        self.h4_format = QTextCharFormat()
-        self.h4_format.setFontPointSize(13)
-        self.h4_format.setFontWeight(QFont.Weight.Bold)
-        self.h4_format.setForeground(QColor("#d1d1d6"))
-
-        # Bold
-        self.bold_format = QTextCharFormat()
-        self.bold_format.setFontWeight(QFont.Weight.Bold)
-        self.bold_format.setForeground(QColor("#ffffff"))
-
-        # Italic
-        self.italic_format = QTextCharFormat()
-        self.italic_format.setFontItalic(True)
-        self.italic_format.setForeground(QColor("#dcdcdc"))
-
-        # Inline Code
+        # Inline code
         self.inline_code_format = QTextCharFormat()
-        self.inline_code_format.setFontFamily("monospace")
+        self.inline_code_format.setFontFamilies(["monospace"])
+        self.inline_code_format.setFontFixedPitch(True)
         self.inline_code_format.setForeground(QColor("#f09a52"))
         self.inline_code_format.setBackground(QColor("#2c2c2e"))
+
+        # Multi-line code block
+        self.code_block_format = QTextCharFormat()
+        self.code_block_format.setFontFamilies(["monospace"])
+        self.code_block_format.setFontFixedPitch(True)
+        self.code_block_format.setForeground(QColor("#f09a52"))
+        self.code_block_format.setBackground(QColor("#242426"))
 
         # Blockquote
         self.quote_format = QTextCharFormat()
         self.quote_format.setFontItalic(True)
         self.quote_format.setForeground(QColor("#98989d"))
 
-        # Horizontal Rule
+        self.quote_bar_format = QTextCharFormat()
+        self.quote_bar_format.setForeground(QColor("#0a84ff"))
+        self.quote_bar_format.setFontWeight(QFont.Weight.Bold)
+
+        # Horizontal rule
         self.hr_format = QTextCharFormat()
         self.hr_format.setForeground(QColor("#48484a"))
         self.hr_format.setFontWeight(QFont.Weight.Bold)
 
-        # Markdown Link
+        # Link
         self.link_format = QTextCharFormat()
         self.link_format.setForeground(QColor("#0a84ff"))
         self.link_format.setFontUnderline(True)
@@ -77,107 +92,215 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.tag_format.setForeground(QColor("#bf5af2"))
         self.tag_format.setFontWeight(QFont.Weight.DemiBold)
 
-        # Checkbox bracket unchecked
-        self.checkbox_uncheck_format = QTextCharFormat()
-        self.checkbox_uncheck_format.setForeground(QColor("#0a84ff"))
-        self.checkbox_uncheck_format.setFontWeight(QFont.Weight.Bold)
+        # List bullet / number
+        self.list_marker_format = QTextCharFormat()
+        self.list_marker_format.setForeground(QColor("#0a84ff"))
+        self.list_marker_format.setFontWeight(QFont.Weight.Bold)
 
-        # Checkbox bracket checked
-        self.checkbox_check_format = QTextCharFormat()
-        self.checkbox_check_format.setForeground(QColor("#30d158"))
-        self.checkbox_check_format.setFontWeight(QFont.Weight.Bold)
+        # Checkboxes (transparent fixed-width prefix at full line height so paintEvent draws the custom box)
+        self.checkbox_prefix_format = QTextCharFormat()
+        self.checkbox_prefix_format.setFontFamilies(["monospace"])
+        self.checkbox_prefix_format.setFontFixedPitch(True)
+        self.checkbox_prefix_format.setFontLetterSpacingType(
+            QFont.SpacingType.PercentageSpacing
+        )
+        self.checkbox_prefix_format.setFontLetterSpacing(55.0)
+        self.checkbox_prefix_format.setForeground(QColor(0, 0, 0, 0))
 
-        # Checked line strikethrough text
+        # Strikethrough (completed tasks & ~~strike~~)
         self.strike_format = QTextCharFormat()
         self.strike_format.setFontStrikeOut(True)
-        self.strike_format.setForeground(QColor("#636366"))
-
-        # Code block line format
-        self.code_block_format = QTextCharFormat()
-        self.code_block_format.setFontFamily("monospace")
-        self.code_block_format.setForeground(QColor("#f09a52"))
-        self.code_block_format.setBackground(QColor("#242426"))
-
-    def _init_rules(self) -> None:
-        # Headers (must start at line start)
-        self._highlighting_rules.append((QRegularExpression(r"^#\s+.*$"), self.h1_format))
-        self._highlighting_rules.append((QRegularExpression(r"^##\s+.*$"), self.h2_format))
-        self._highlighting_rules.append((QRegularExpression(r"^###\s+.*$"), self.h3_format))
-        self._highlighting_rules.append((QRegularExpression(r"^####+\s+.*$"), self.h4_format))
-
-        # Horizontal rules
-        self._highlighting_rules.append((QRegularExpression(r"^(\-{3,}|\*{3,}|_{3,})$"), self.hr_format))
-
-        # Quotes
-        self._highlighting_rules.append((QRegularExpression(r"^>\s+.*$"), self.quote_format))
-
-        # Bold: **bold** or __bold__
-        self._highlighting_rules.append((QRegularExpression(r"(\*\*|__)(.*?)\1"), self.bold_format))
-
-        # Italic: *italic* or _italic_ (avoiding conflict with bold)
-        self._highlighting_rules.append((QRegularExpression(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)"), self.italic_format))
-
-        # Inline Code: `code`
-        self._highlighting_rules.append((QRegularExpression(r"`([^`\n]+)`"), self.inline_code_format))
-
-        # Markdown links: [text](url)
-        self._highlighting_rules.append((QRegularExpression(r"\[([^\]]+)\]\(([^)]+)\)"), self.link_format))
-
-        # Tags: #tag (word boundaries, not headers)
-        self._highlighting_rules.append((QRegularExpression(r"(?<=\s)#[\w\d_-]+"), self.tag_format))
+        self.strike_format.setForeground(QColor("#686868"))
 
     def highlightBlock(self, text: str) -> None:
-        """Apply formatting to the text block."""
-        # 1. Check for multi-line code blocks
-        is_in_code_block = self._handle_code_blocks(text)
-        if is_in_code_block:
+        """Apply cursor-aware Obsidian-style highlighting to the current block."""
+        is_active = self.currentBlock().blockNumber() == self.active_block_number
+
+        # 1. Multi-line fenced code blocks (```)
+        if self._handle_code_blocks(text, is_active):
             return
 
-        # 2. Check for Checkbox Checklist items
-        cb_match = QRegularExpression(r"^(\s*[-*+]\s*\[)([ xX])(\]\s*)(.*)$").match(text)
-        if cb_match.hasMatch():
-            status = cb_match.captured(2)
-            # Format the bracket area
-            bracket_start = cb_match.capturedStart(1)
-            bracket_len = cb_match.capturedLength(1) + cb_match.capturedLength(2) + cb_match.capturedLength(3)
-            fmt = self.checkbox_check_format if status.lower() == "x" else self.checkbox_uncheck_format
-            self.setFormat(bracket_start, bracket_len, fmt)
+        # 2. Horizontal rules (---, ***, ___)
+        if HR_RE.match(text):
+            self.setFormat(0, len(text), self.hr_format)
+            return
 
-            # If checked, apply strikethrough to the remaining text
-            if status.lower() == "x":
-                text_start = cb_match.capturedStart(4)
-                text_len = cb_match.capturedLength(4)
-                if text_len > 0:
-                    self.setFormat(text_start, text_len, self.strike_format)
-                    return  # Strikethrough takes priority on checked items
+        base_point_size: Optional[int] = None
+        base_bold: bool = False
+        base_color: Optional[QColor] = None
 
-        # 3. Apply standard rules
-        for pattern, fmt in self._highlighting_rules:
-            match_iterator = pattern.globalMatch(text)
-            while match_iterator.hasNext():
-                match = match_iterator.next()
-                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+        # 3. Headings (# H1 .. ###### H6)
+        h_match = HEADING_RE.match(text)
+        if h_match:
+            hashes, spaces, _ = h_match.groups()
+            level = len(hashes)
+            prefix_len = len(hashes) + len(spaces)
+            base_point_size = self.HEADING_SIZES.get(level, 13)
+            base_bold = True
+            base_color = QColor(self.HEADING_COLORS.get(level, "#ffffff"))
 
-    def _handle_code_blocks(self, text: str) -> bool:
-        """Handle code block fences (```). Returns True if current block is part of code block."""
-        # State: 1 = in code block, 0 = normal
+            h_fmt = QTextCharFormat()
+            h_fmt.setFontPointSize(base_point_size)
+            h_fmt.setFontWeight(QFont.Weight.Bold)
+            h_fmt.setForeground(base_color)
+            self.setFormat(0, len(text), h_fmt)
+
+            if is_active:
+                active_marker = QTextCharFormat(h_fmt)
+                active_marker.setForeground(QColor("#636366"))
+                self.setFormat(0, prefix_len, active_marker)
+            else:
+                self.setFormat(0, prefix_len, self.hidden_format)
+
+        # 4. Checkboxes (- [ ] / - [] / - [x])
+        cb_match = CHECKBOX_RE.match(text) if not h_match else None
+        if cb_match:
+            indent, prefix, status, _ = cb_match.groups()
+            prefix_start = len(indent)
+            prefix_len = len(prefix)
+            is_checked = status.lower() == "x"
+            self.setFormat(prefix_start, prefix_len, self.checkbox_prefix_format)
+
+            if is_checked:
+                text_start = prefix_start + prefix_len
+                self.setFormat(text_start, len(text) - text_start, self.strike_format)
+                return
+
+        # 5. Blockquotes (> quote)
+        q_match = QUOTE_RE.match(text) if not (h_match or cb_match) else None
+        if q_match:
+            prefix = q_match.group(1)
+            self.setFormat(0, len(text), self.quote_format)
+            if is_active:
+                self.setFormat(0, len(prefix), self.quote_bar_format)
+            else:
+                self.setFormat(0, len(prefix), self.hidden_format)
+
+        # 6. Standard Bullet / Numbered Lists (- item, 1. item)
+        list_match = LIST_RE.match(text) if not (h_match or cb_match or q_match) else None
+        if list_match:
+            indent, marker, space, _ = list_match.groups()
+            self.setFormat(len(indent), len(marker) + len(space), self.list_marker_format)
+
+        # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), #tag)
+        self._apply_inline_rules(text, is_active, base_point_size, base_bold, base_color)
+
+    def _apply_inline_rules(
+        self,
+        text: str,
+        is_active: bool,
+        base_point_size: Optional[int],
+        base_bold: bool,
+        base_color: Optional[QColor],
+    ) -> None:
+        """Apply inline markdown styles and hide syntax markers when line is inactive."""
+        # Bold: **text** or __text__
+        for m in BOLD_RE.finditer(text):
+            marker_len = len(m.group(1))
+            start, end = m.span()
+            fmt = QTextCharFormat()
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            fmt.setFontWeight(QFont.Weight.Bold)
+            fmt.setForeground(QColor("#ffffff"))
+            self.setFormat(start + marker_len, (end - start) - 2 * marker_len, fmt)
+            self._format_markers(start, end, marker_len, is_active, base_point_size)
+
+        # Italic: *text*
+        for m in ITALIC_RE.finditer(text):
+            start, end = m.span()
+            fmt = QTextCharFormat()
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            if base_bold:
+                fmt.setFontWeight(QFont.Weight.Bold)
+            fmt.setFontItalic(True)
+            fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
+            self.setFormat(start + 1, (end - start) - 2, fmt)
+            self._format_markers(start, end, 1, is_active, base_point_size)
+
+        # Inline code: `code`
+        for m in INLINE_CODE_RE.finditer(text):
+            start, end = m.span()
+            fmt = QTextCharFormat(self.inline_code_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self.setFormat(start + 1, (end - start) - 2, fmt)
+            self._format_markers(start, end, 1, is_active, base_point_size)
+
+        # Strikethrough: ~~text~~
+        for m in STRIKE_RE.finditer(text):
+            start, end = m.span()
+            fmt = QTextCharFormat(self.strike_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self.setFormat(start + 2, (end - start) - 4, fmt)
+            self._format_markers(start, end, 2, is_active, base_point_size)
+
+        # Links: [text](url)
+        for m in LINK_RE.finditer(text):
+            g1_start, g1_end = m.span(1)
+            g2_start, g2_end = m.span(2)
+            g3_start, g3_end = m.span(3)
+            fmt = QTextCharFormat(self.link_format)
+            if base_point_size:
+                fmt.setFontPointSize(base_point_size)
+            self.setFormat(g2_start, g2_end - g2_start, fmt)
+            syntax_fmt = self.marker_format if is_active else self.hidden_format
+            self.setFormat(g1_start, g1_end - g1_start, syntax_fmt)
+            self.setFormat(g3_start, g3_end - g3_start, syntax_fmt)
+
+        # Tags: #tag (not headings)
+        if not base_point_size:
+            for m in TAG_RE.finditer(text):
+                start, end = m.span(1)
+                self.setFormat(start, end - start, self.tag_format)
+
+    def _format_markers(
+        self,
+        start: int,
+        end: int,
+        marker_len: int,
+        is_active: bool,
+        base_point_size: Optional[int],
+    ) -> None:
+        """Style opening and closing inline markdown delimiters."""
+        if is_active:
+            m_fmt = QTextCharFormat(self.marker_format)
+            if base_point_size:
+                m_fmt.setFontPointSize(base_point_size)
+            self.setFormat(start, marker_len, m_fmt)
+            self.setFormat(end - marker_len, marker_len, m_fmt)
+        else:
+            self.setFormat(start, marker_len, self.hidden_format)
+            self.setFormat(end - marker_len, marker_len, self.hidden_format)
+
+    def _handle_code_blocks(self, text: str, is_active: bool) -> bool:
+        """Handle multi-line fenced code blocks (```)."""
         prev_state = self.previousBlockState()
-        fence_match = re.match(r"^\s*```", text)
+        is_fence = FENCE_RE.match(text) is not None
 
         if prev_state == 1:
-            # We are inside a code block
-            self.setFormat(0, len(text), self.code_block_format)
-            if fence_match:
-                self.setCurrentBlockState(0)  # Close code block
-            else:
-                self.setCurrentBlockState(1)
-            return True
-        else:
-            if fence_match:
-                # Open code block
-                self.setFormat(0, len(text), self.code_block_format)
-                self.setCurrentBlockState(1)
-                return True
-            else:
+            if is_fence:
                 self.setCurrentBlockState(0)
-                return False
+                self.setFormat(
+                    0,
+                    len(text),
+                    self.marker_format if is_active else self.hidden_format,
+                )
+            else:
+                self.setCurrentBlockState(1)
+                self.setFormat(0, len(text), self.code_block_format)
+            return True
+
+        if is_fence:
+            self.setCurrentBlockState(1)
+            self.setFormat(
+                0,
+                len(text),
+                self.marker_format if is_active else self.hidden_format,
+            )
+            return True
+
+        self.setCurrentBlockState(0)
+        return False

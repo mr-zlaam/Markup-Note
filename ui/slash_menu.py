@@ -3,10 +3,11 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
+from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
     QFrame,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QStyle,
@@ -25,7 +26,7 @@ class SlashCommand:
     title: str
     description: str
     icon: str
-    prefix: str  # Markdown syntax to insert
+    prefix: str
 
 
 COMMANDS: List[SlashCommand] = [
@@ -66,7 +67,7 @@ class SlashItemDelegate(QStyledItemDelegate):
 
         # Icon box
         icon_font = QFont(option.font)
-        icon_font.setPointSize(11)
+        icon_font.setPointSize(10)
         icon_font.setBold(True)
         painter.setFont(icon_font)
         painter.setPen(QColor("#ffffff" if is_selected else "#0a84ff"))
@@ -94,7 +95,7 @@ class SlashItemDelegate(QStyledItemDelegate):
 
 
 class SlashCommandPalette(QFrame):
-    """Floating popup menu triggered by typing '/'."""
+    """Floating popup menu triggered by typing '/' at the start of a line."""
 
     command_selected = pyqtSignal(object)  # Emits selected SlashCommand
 
@@ -102,12 +103,18 @@ class SlashCommandPalette(QFrame):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
         self.setObjectName("SlashCommandPalette")
-        self.setFixedSize(280, 260)
+        self.setFixedSize(280, 280)
         self.setStyleSheet("""
             QFrame#SlashCommandPalette {
                 background-color: #242426;
                 border: 1px solid #38383a;
                 border-radius: 8px;
+            }
+            QLabel#FilterHeader {
+                color: #98989d;
+                font-size: 11px;
+                padding: 4px 10px;
+                border-bottom: 1px solid #323234;
             }
             QListWidget {
                 background: transparent;
@@ -118,6 +125,11 @@ class SlashCommandPalette(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        self.filter_label = QLabel("Type to filter commands...", parent=self)
+        self.filter_label.setObjectName("FilterHeader")
+        layout.addWidget(self.filter_label)
 
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setItemDelegate(SlashItemDelegate(self.list_widget))
@@ -127,9 +139,21 @@ class SlashCommandPalette(QFrame):
         self._filter_text = ""
         self.populate()
 
+    @property
+    def filter_text(self) -> str:
+        """Return current active filter query."""
+        return self._filter_text
+
     def populate(self, query: str = "") -> None:
         """Filter and populate command items."""
         self._filter_text = query.lower().strip()
+        if self._filter_text:
+            self.filter_label.setText(f"Filter: {self._filter_text}")
+            self.filter_label.setStyleSheet("color: #0a84ff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-bottom: 1px solid #323234;")
+        else:
+            self.filter_label.setText("Type to filter commands...")
+            self.filter_label.setStyleSheet("color: #98989d; font-size: 11px; padding: 4px 10px; border-bottom: 1px solid #323234;")
+
         self.list_widget.clear()
 
         for cmd in COMMANDS:
@@ -145,6 +169,17 @@ class SlashCommandPalette(QFrame):
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
 
+    def append_filter_char(self, ch: str) -> None:
+        """Append a character to the filter query and refresh list."""
+        self.populate(self._filter_text + ch)
+
+    def backspace_filter(self) -> bool:
+        """Remove last character from filter. Returns False if filter was already empty."""
+        if not self._filter_text:
+            return False
+        self.populate(self._filter_text[:-1])
+        return True
+
     def select_next(self) -> None:
         row = self.list_widget.currentRow()
         if row < self.list_widget.count() - 1:
@@ -159,10 +194,12 @@ class SlashCommandPalette(QFrame):
         current_item = self.list_widget.currentItem()
         if current_item is not None:
             cmd = current_item.data(Qt.ItemDataRole.UserRole)
+            self.hide()
             self.command_selected.emit(cmd)
+        else:
             self.hide()
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
         cmd = item.data(Qt.ItemDataRole.UserRole)
-        self.command_selected.emit(cmd)
         self.hide()
+        self.command_selected.emit(cmd)

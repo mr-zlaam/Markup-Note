@@ -32,8 +32,8 @@ from utils.icons import generate_standard_app_icons
 generate_standard_app_icons()
 "
 
-# 2. Compile application with PyInstaller (--onedir for optimal AppImage startup)
-echo "==> Compiling application with PyInstaller..."
+# 2. Compile application with PyInstaller (lean, targeted for optimal size)
+echo "==> Compiling application with PyInstaller (stripped of unused Qt modules)..."
 .venv/bin/pyinstaller \
     --name markup-notes \
     --windowed \
@@ -41,7 +41,35 @@ echo "==> Compiling application with PyInstaller..."
     --noconfirm \
     --clean \
     --add-data "$PROJECT_ROOT/assets:assets" \
-    --collect-all PyQt6 \
+    --hidden-import PyQt6.QtCore \
+    --hidden-import PyQt6.QtGui \
+    --hidden-import PyQt6.QtWidgets \
+    --hidden-import PyQt6.QtDBus \
+    --exclude-module PyQt6.QtQuick \
+    --exclude-module PyQt6.QtQuickWidgets \
+    --exclude-module PyQt6.QtQuick3D \
+    --exclude-module PyQt6.QtQml \
+    --exclude-module PyQt6.Qt3DCore \
+    --exclude-module PyQt6.Qt3DRender \
+    --exclude-module PyQt6.Qt3DInput \
+    --exclude-module PyQt6.Qt3DLogic \
+    --exclude-module PyQt6.Qt3DExtras \
+    --exclude-module PyQt6.Qt3DAnimation \
+    --exclude-module PyQt6.QtMultimedia \
+    --exclude-module PyQt6.QtMultimediaWidgets \
+    --exclude-module PyQt6.QtBluetooth \
+    --exclude-module PyQt6.QtNfc \
+    --exclude-module PyQt6.QtSql \
+    --exclude-module PyQt6.QtSensors \
+    --exclude-module PyQt6.QtPositioning \
+    --exclude-module PyQt6.QtLocation \
+    --exclude-module PyQt6.QtWebChannel \
+    --exclude-module PyQt6.QtWebSockets \
+    --exclude-module PyQt6.QtRemoteObjects \
+    --exclude-module PyQt6.QtTextToSpeech \
+    --exclude-module PyQt6.QtSpatialAudio \
+    --exclude-module PyQt6.QtDesigner \
+    --exclude-module PyQt6.QtHelp \
     --distpath "$BUILD_DIR/dist" \
     --workpath "$BUILD_DIR/work" \
     --specpath "$BUILD_DIR" \

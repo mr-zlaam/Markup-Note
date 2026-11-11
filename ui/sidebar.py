@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.dialogs import ModernInputDialog
+from utils.icons import create_plus_icon, create_sidebar_toggle_icon
 
 
 class FolderSidebar(QWidget):
@@ -25,6 +26,8 @@ class FolderSidebar(QWidget):
     folder_selected = pyqtSignal(object)
     # Signal emitted when user requests a new folder
     create_folder_requested = pyqtSignal(str)
+    # Signal emitted when user clicks the sidebar collapse button
+    collapse_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -35,22 +38,34 @@ class FolderSidebar(QWidget):
         layout.setContentsMargins(4, 8, 4, 8)
         layout.setSpacing(6)
 
-        # Header with title and "New Folder" button
+        # Header with title, "New Folder" (+) button, and sidebar collapse button
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(10, 4, 6, 4)
+        header_layout.setSpacing(4)
 
         title_label = QLabel("Folders", parent=self)
-        title_label.setStyleSheet("font-weight: 600; color: #888888; font-size: 11px; text-transform: uppercase;")
+        title_label.setStyleSheet("font-weight: 600; color: #888888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;")
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
 
-        self.add_folder_btn = QPushButton("+", parent=self)
-        self.add_folder_btn.setObjectName("ActionBtn")
-        self.add_folder_btn.setToolTip("Create new folder")
-        self.add_folder_btn.setFixedSize(24, 24)
+        # Clean vector + icon for new folder
+        self.add_folder_btn = QPushButton(parent=self)
+        self.add_folder_btn.setObjectName("IconButton")
+        self.add_folder_btn.setIcon(create_plus_icon("#8e8e93", size=14))
+        self.add_folder_btn.setToolTip("New Folder (Ctrl+Shift+N)")
+        self.add_folder_btn.setFixedSize(26, 26)
         self.add_folder_btn.clicked.connect(self._on_add_folder_clicked)
         header_layout.addWidget(self.add_folder_btn)
+
+        # Vector sidebar collapse icon
+        self.collapse_btn = QPushButton(parent=self)
+        self.collapse_btn.setObjectName("IconButton")
+        self.collapse_btn.setIcon(create_sidebar_toggle_icon("#8e8e93", size=15))
+        self.collapse_btn.setToolTip("Collapse Folders (Ctrl+\\)")
+        self.collapse_btn.setFixedSize(26, 26)
+        self.collapse_btn.clicked.connect(self.collapse_requested.emit)
+        header_layout.addWidget(self.collapse_btn)
 
         layout.addLayout(header_layout)
 

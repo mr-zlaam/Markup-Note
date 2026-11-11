@@ -7,6 +7,7 @@ from PyQt6.QtCore import QFileSystemWatcher, QTimer, Qt
 from PyQt6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
+from core.config import ConfigManager
 from core.note import Note
 from core.storage import StorageManager
 from ui.dialogs import ModernConfirmDialog
@@ -18,10 +19,22 @@ from ui.sidebar import FolderSidebar
 class MainWindow(QMainWindow):
     """Main window hosting the Apple Notes 3-pane interface."""
 
-    def __init__(self, storage_manager: Optional[StorageManager] = None, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        storage_manager: Optional[StorageManager] = None,
+        config_manager: Optional[ConfigManager] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent=parent)
         self.setWindowTitle("Note Taker")
-        self.resize(1000, 680)
+
+        # Load persisted settings from ~/.config/note-taker/settings.json
+        self.config_manager = config_manager if config_manager is not None else ConfigManager()
+        self.config = self.config_manager.settings
+
+        self.resize(self.config.window.width, self.config.window.height)
+        if self.config.window.maximized:
+            self.showMaximized()
 
         self.storage = storage_manager if storage_manager is not None else StorageManager()
         self._current_folder: Optional[Path] = None
@@ -45,21 +58,33 @@ class MainWindow(QMainWindow):
         self.sidebar = FolderSidebar(parent=self.splitter)
         self.sidebar.folder_selected.connect(self._on_folder_selected)
         self.sidebar.create_folder_requested.connect(self._on_create_folder)
+        self.sidebar.collapse_requested.connect(self._toggle_sidebar)
 
         # 2. Middle: Note Cards List
         self.note_list = NoteListPanel(parent=self.splitter)
         self.note_list.note_selected.connect(self._on_note_selected)
         self.note_list.create_note_requested.connect(self._on_create_note)
         self.note_list.search_query_changed.connect(self._on_search_filter)
+        self.note_list.toggle_folders_requested.connect(self._toggle_sidebar)
+        self.note_list.collapse_notes_requested.connect(self._toggle_notes_list)
 
         # 3. Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
         self.editor.content_saved.connect(self._on_content_saved)
         self.editor.create_note_with_content.connect(self._on_create_note_with_content)
         self.editor.delete_requested.connect(self._on_delete_note)
+        self.editor.expand_notes_requested.connect(self._toggle_notes_list)
 
-        # Set initial splitter proportions (180px, 260px, remaining)
-        self.splitter.setSizes([190, 280, 530])
+        # Restore layout from configuration
+        folders_w = self.config.layout.folders_width if self.config.layout.folders_visible else 0
+        notes_w = self.config.layout.notes_list_width if self.config.layout.notes_list_visible else 0
+        total_w = self.config.window.width
+        editor_w = max(300, total_w - folders_w - notes_w)
+
+        self.splitter.setSizes([folders_w, notes_w, editor_w])
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+        self._update_panel_buttons()
+
         self.setCentralWidget(self.splitter)
 
     def _setup_shortcuts(self) -> None:
@@ -75,6 +100,10 @@ class MainWindow(QMainWindow):
         # Toggle Folders Sidebar (Ctrl+\)
         toggle_sidebar_sc = QShortcut(QKeySequence("Ctrl+\\"), self)
         toggle_sidebar_sc.activated.connect(self._toggle_sidebar)
+
+        # Toggle Notes List (Ctrl+Shift+\)
+        toggle_notes_sc = QShortcut(QKeySequence("Ctrl+Shift+\\"), self)
+        toggle_notes_sc.activated.connect(self._toggle_notes_list)
 
         # Focus Search (Ctrl+F)
         search_sc = QShortcut(QKeySequence("Ctrl+F"), self)
@@ -243,22 +272,93 @@ class MainWindow(QMainWindow):
         ]
         self.note_list.set_notes(filtered)
 
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Track manual splitter adjustments and sync to configuration."""
+        sizes = self.splitter.sizes()
+        if sizes[0] > 50:
+            self.config.layout.folders_width = sizes[0]
+            self.config.layout.folders_visible = True
+        elif sizes[0] == 0:
+            self.config.layout.folders_visible = False
+
+        if sizes[1] > 50:
+            self.config.layout.notes_list_width = sizes[1]
+            self.config.layout.notes_list_visible = True
+        elif sizes[1] == 0:
+            self.config.layout.notes_list_visible = False
+
+        self._update_panel_buttons()
+        self.config_manager.save()
+
+    def _update_panel_buttons(self) -> None:
+        """Synchronize toggle button visibilities and tooltips with current splitter state."""
+        sizes = self.splitter.sizes()
+        is_folders_collapsed = (sizes[0] == 0)
+        is_notes_collapsed = (sizes[1] == 0)
+
+        # In Note List: show toggle folders icon
+        if is_folders_collapsed:
+            self.note_list.toggle_folders_btn.setToolTip("Show Folders (Ctrl+\\)")
+        else:
+            self.note_list.toggle_folders_btn.setToolTip("Hide Folders (Ctrl+\\)")
+
+        # In Editor: show expand notes icon only when notes list is collapsed
+        self.editor.expand_notes_btn.setVisible(is_notes_collapsed)
+
     def _toggle_sidebar(self) -> None:
+        """Toggle left folders sidebar between collapsed (0px) and expanded."""
         sizes = self.splitter.sizes()
         if sizes[0] > 0:
-            # Collapse sidebar
-            self._previous_sidebar_width = sizes[0]
-            self.splitter.setSizes([0, sizes[1] + sizes[0], sizes[2]])
+            # Collapse folders
+            self.config.layout.folders_width = max(180, sizes[0])
+            self.config.layout.folders_visible = False
+            self.splitter.setSizes([0, sizes[1], sizes[2] + sizes[0]])
         else:
-            # Restore sidebar
-            restore_w = getattr(self, "_previous_sidebar_width", 190)
-            self.splitter.setSizes([restore_w, sizes[1] - restore_w, sizes[2]])
+            # Restore folders
+            restore_w = self.config.layout.folders_width
+            if restore_w < 120:
+                restore_w = 190
+            self.config.layout.folders_visible = True
+            delta = restore_w
+            new_s2 = max(250, sizes[2] - delta)
+            self.splitter.setSizes([restore_w, sizes[1], new_s2])
+
+        self._update_panel_buttons()
+        self.config_manager.save()
+
+    def _toggle_notes_list(self) -> None:
+        """Toggle middle notes list between collapsed (0px) and expanded."""
+        sizes = self.splitter.sizes()
+        if sizes[1] > 0:
+            # Collapse notes list (distraction-free editor mode)
+            self.config.layout.notes_list_width = max(220, sizes[1])
+            self.config.layout.notes_list_visible = False
+            self.splitter.setSizes([sizes[0], 0, sizes[2] + sizes[1]])
+        else:
+            # Restore notes list
+            restore_w = self.config.layout.notes_list_width
+            if restore_w < 150:
+                restore_w = 280
+            self.config.layout.notes_list_visible = True
+            delta = restore_w
+            new_s2 = max(250, sizes[2] - delta)
+            self.splitter.setSizes([sizes[0], restore_w, new_s2])
+
+        self._update_panel_buttons()
+        self.config_manager.save()
 
     def flush_pending_save(self) -> None:
         """Flush any unsaved debounced editor changes immediately."""
         self.editor.flush_pending_save()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Ensure any pending note edits are saved before the window closes."""
+        """Ensure any pending note edits and window geometry are persisted before exit."""
         self.flush_pending_save()
+        if not self.isMaximized():
+            self.config.window.width = self.width()
+            self.config.window.height = self.height()
+            self.config.window.maximized = False
+        else:
+            self.config.window.maximized = True
+        self.config_manager.save()
         super().closeEvent(event)

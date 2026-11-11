@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from core.note import Note
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from utils.touch import TouchScrollTracker, is_touch_event
+from utils.icons import create_notes_toggle_icon, create_sidebar_toggle_icon
 from utils.code_engine import (
     CodeRegion,
     get_code_content_width,
@@ -1469,6 +1470,7 @@ class EditorPanel(QWidget):
     content_saved = pyqtSignal(str)  # Emits new content when debounced auto-save fires
     create_note_with_content = pyqtSignal(str)  # Emitted when user types on empty canvas
     delete_requested = pyqtSignal()
+    expand_notes_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -1490,6 +1492,17 @@ class EditorPanel(QWidget):
         # Header bar (Folder name, word count, delete button)
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+
+        # Button to expand notes list when collapsed
+        self.expand_notes_btn = QPushButton(parent=self)
+        self.expand_notes_btn.setObjectName("IconButton")
+        self.expand_notes_btn.setIcon(create_notes_toggle_icon("#8e8e93", size=15))
+        self.expand_notes_btn.setToolTip("Show Notes List")
+        self.expand_notes_btn.setFixedSize(26, 26)
+        self.expand_notes_btn.setVisible(False)
+        self.expand_notes_btn.clicked.connect(self.expand_notes_requested.emit)
+        header.addWidget(self.expand_notes_btn)
 
         self.meta_label = QLabel("", parent=self)
         self.meta_label.setStyleSheet("color: #7a7a7a; font-size: 11px;")

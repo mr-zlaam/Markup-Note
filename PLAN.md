@@ -43,7 +43,19 @@
 ### Phase 3: The 3-Pane Apple Notes UI Layout (`ui/`)
 * 🟢 **`[Completed]`** **Collapsible 3-Column Splitter (`ui/main_window.py`):**
   * Fluid `QSplitter` with preserved column proportions.
-  * Sidebar toggle shortcut (`Ctrl+\`).
+  * Sidebar toggle shortcut (`Ctrl+\`) and Notes list toggle shortcut (`Ctrl+Shift+\`).
+* 🟢 **`[Completed]`** **VS Code-Style JSON Configuration Engine (`core/config.py`):**
+  * Persists layout state (`folders_visible`, `notes_list_visible`, `folders_width`, `notes_list_width`) and window geometry (`width`, `height`, `maximized`) to `~/.config/note-taker/settings.json`.
+  * Atomic file writing prevents corruption; graceful defaults prevent startup crashes.
+  * Preserves exact collapsed/expanded panel states across app restarts.
+* 🟢 **`[Completed]`** **Interactive Panel Collapse & Expand System:**
+  * **Folders Collapse:** Toggle icon button in Folders header closes pane to 0px; toggle button at the top-left of Note List header expands Folders back.
+  * **Notes List Collapse:** Toggle icon button in Note List header closes pane to 0px; expand button in Editor header restores Notes list.
+  * **Distraction-Free Mode:** When both Folders and Notes are collapsed, Editor takes 100% of window width.
+* 🟢 **`[Completed]`** **Native High-DPI Vector Icons (`utils/icons.py`):**
+  * Embedded magnifying glass search icon inside `QLineEdit` search input.
+  * Clean vector `+` icons for "New Folder" and "New Note" buttons with rounded terminal caps.
+  * Modern panel toggle icons for sidebar and notes list (`[| ]` and `[ | ]`).
 * 🟢 **`[Completed]`** **Folders Sidebar (`ui/sidebar.py`):**
   * Tree view displaying "All Notes" and custom subfolders matching the filesystem.
   * "New Folder" inline creation button and `Ctrl+Shift+N` shortcut.

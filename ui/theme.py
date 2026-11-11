@@ -75,8 +75,8 @@ QLineEdit#SearchBar {
     color: #f0f0f0;
     border: 1px solid #383838;
     border-radius: 6px;
-    padding: 6px 12px;
-    margin: 8px;
+    padding: 6px 10px 6px 4px;
+    margin: 0px;
     font-size: 12px;
 }
 
@@ -102,7 +102,7 @@ QPushButton#ActionBtn {
     color: #a0a0a0;
     border: none;
     border-radius: 4px;
-    padding: 6px 10px;
+    padding: 5px 8px;
     font-weight: 500;
 }
 
@@ -113,6 +113,22 @@ QPushButton#ActionBtn:hover {
 
 QPushButton#ActionBtn:pressed {
     background-color: #383838;
+}
+
+/* Icon Buttons */
+QPushButton#IconButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 3px;
+}
+
+QPushButton#IconButton:hover {
+    background-color: #2c2c30;
+}
+
+QPushButton#IconButton:pressed {
+    background-color: #38383e;
 }
 
 /* Scrollbars */

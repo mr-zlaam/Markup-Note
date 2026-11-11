@@ -19,6 +19,12 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
+from utils.icons import (
+    create_notes_toggle_icon,
+    create_plus_icon,
+    create_search_icon,
+    create_sidebar_toggle_icon,
+)
 
 
 class NoteCardDelegate(QStyledItemDelegate):
@@ -99,6 +105,8 @@ class NoteListPanel(QWidget):
     note_selected = pyqtSignal(object)  # Emits Note instance
     create_note_requested = pyqtSignal()
     search_query_changed = pyqtSignal(str)
+    toggle_folders_requested = pyqtSignal()
+    collapse_notes_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -110,22 +118,47 @@ class NoteListPanel(QWidget):
         layout.setContentsMargins(4, 6, 4, 4)
         layout.setSpacing(4)
 
-        # Top Bar: Search Bar & New Note Button
+        # Top Bar: Toggle Folders, Search Bar, New Note, Collapse Notes
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(4, 0, 4, 0)
         top_bar.setSpacing(6)
 
+        # Toggle Folders button (shown when folders is collapsed or to toggle folders)
+        self.toggle_folders_btn = QPushButton(parent=self)
+        self.toggle_folders_btn.setObjectName("IconButton")
+        self.toggle_folders_btn.setIcon(create_sidebar_toggle_icon("#8e8e93", size=15))
+        self.toggle_folders_btn.setToolTip("Toggle Folders (Ctrl+\\)")
+        self.toggle_folders_btn.setFixedSize(26, 26)
+        self.toggle_folders_btn.clicked.connect(self.toggle_folders_requested.emit)
+        top_bar.addWidget(self.toggle_folders_btn)
+
+        # Search Bar with embedded vector magnifying glass icon
         self.search_bar = QLineEdit(parent=self)
         self.search_bar.setObjectName("SearchBar")
         self.search_bar.setPlaceholderText("Search notes...")
+        self.search_bar.addAction(
+            create_search_icon("#7a7a80", size=14),
+            QLineEdit.ActionPosition.LeadingPosition,
+        )
         self.search_bar.textChanged.connect(self._on_search_text_changed)
         top_bar.addWidget(self.search_bar)
 
-        self.new_note_btn = QPushButton("+ Note", parent=self)
+        # New Note Button with vector plus icon
+        self.new_note_btn = QPushButton(" Note", parent=self)
         self.new_note_btn.setObjectName("ActionBtn")
+        self.new_note_btn.setIcon(create_plus_icon("#ffffff", size=12))
         self.new_note_btn.setToolTip("Create new note (Ctrl+N)")
         self.new_note_btn.clicked.connect(self.create_note_requested.emit)
         top_bar.addWidget(self.new_note_btn)
+
+        # Collapse Notes list button
+        self.collapse_notes_btn = QPushButton(parent=self)
+        self.collapse_notes_btn.setObjectName("IconButton")
+        self.collapse_notes_btn.setIcon(create_notes_toggle_icon("#8e8e93", size=15))
+        self.collapse_notes_btn.setToolTip("Collapse Notes List")
+        self.collapse_notes_btn.setFixedSize(26, 26)
+        self.collapse_notes_btn.clicked.connect(self.collapse_notes_requested.emit)
+        top_bar.addWidget(self.collapse_notes_btn)
 
         layout.addLayout(top_bar)
 

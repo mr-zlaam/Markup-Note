@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 
 from core.note import Note
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
+from ui.slash_menu import SlashCommand, SlashCommandPalette
 from utils.touch import TouchScrollTracker, is_touch_event
 from utils.icons import create_notes_toggle_icon, create_sidebar_toggle_icon
 from utils.code_engine import (
@@ -129,7 +130,7 @@ class MarkdownEditor(QTextEdit):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
         self.setObjectName("MarkdownEditor")
-        self.setPlaceholderText("Write your note in Markdown...")
+        self.setPlaceholderText("Type text or / for commands")
         self.setAcceptRichText(False)
 
         # Guarantee strict Left-to-Right layout and clean word wrapping
@@ -189,6 +190,79 @@ class MarkdownEditor(QTextEdit):
         self._margin_timer.setSingleShot(True)
         self._margin_timer.setInterval(50)
         self._margin_timer.timeout.connect(self._update_blockquote_margins)
+
+        # Slash command palette (Notion-style block creation)
+        self.slash_palette = SlashCommandPalette(self)
+        self.slash_palette.command_selected.connect(self._on_slash_command_selected)
+        self._slash_start_pos: Optional[int] = None
+
+    def focusOutEvent(self, event) -> None:
+        if self.slash_palette.isVisible() and not self.slash_palette.hasFocus():
+            self.slash_palette.hide()
+        super().focusOutEvent(event)
+
+    def _show_slash_palette(self) -> None:
+        """Position and display the floating slash palette directly beneath the cursor."""
+        cursor_rect = self.cursorRect()
+        global_pos = self.viewport().mapToGlobal(cursor_rect.bottomLeft())
+        palette_w = self.slash_palette.width()
+        palette_h = self.slash_palette.height()
+
+        x = global_pos.x()
+        y = global_pos.y() + 4
+
+        # Keep on screen if near edges
+        screen = self.screen()
+        if screen:
+            screen_geom = screen.availableGeometry()
+            if y + palette_h > screen_geom.bottom():
+                top_pos = self.viewport().mapToGlobal(cursor_rect.topLeft())
+                y = top_pos.y() - palette_h - 4
+            if x + palette_w > screen_geom.right():
+                x = screen_geom.right() - palette_w - 8
+
+        self.slash_palette.move(x, y)
+        self.slash_palette.populate("")
+        self.slash_palette.show()
+        self.slash_palette.raise_()
+
+    def _on_slash_command_selected(self, cmd: SlashCommand) -> None:
+        """Replace the typed slash query with the selected Markdown block syntax."""
+        self.slash_palette.hide()
+        cursor = self.textCursor()
+        block = cursor.block()
+
+        # Determine the slash position
+        slash_pos = self._slash_start_pos - 1 if self._slash_start_pos is not None else None
+        if slash_pos is None or slash_pos < block.position() or slash_pos > cursor.position():
+            b_text = block.text()
+            b_offset = cursor.positionInBlock()
+            last_slash = b_text.rfind("/", 0, b_offset)
+            if last_slash != -1:
+                slash_pos = block.position() + last_slash
+            else:
+                slash_pos = cursor.position()
+
+        cursor.beginEditBlock()
+        replace_cursor = QTextCursor(self.document())
+        replace_cursor.setPosition(slash_pos)
+        replace_cursor.setPosition(cursor.position(), QTextCursor.MoveMode.KeepAnchor)
+
+        if cmd.id == "code":
+            replace_cursor.insertText("```\n\n```")
+            target_pos = slash_pos + 4
+            c = QTextCursor(self.document())
+            c.setPosition(target_pos)
+            self.setTextCursor(c)
+        else:
+            replace_cursor.insertText(cmd.prefix)
+            self.setTextCursor(replace_cursor)
+
+        cursor.endEditBlock()
+        self._slash_start_pos = None
+        self.setFocus()
+        self.ensureCursorVisible()
+        self.viewport().update()
 
     def _reset_copied_state(self) -> None:
         """Reset the copy button feedback to default."""
@@ -1001,6 +1075,9 @@ class MarkdownEditor(QTextEdit):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle clicking directly on checkboxes, buttons, scrollbars, or Ctrl+Click on links."""
+        if self.slash_palette.isVisible():
+            self.slash_palette.hide()
+
         if is_touch_event(event):
             self._on_touch_down(event.position())
             return
@@ -1136,6 +1213,9 @@ class MarkdownEditor(QTextEdit):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         """Handle horizontal scrolling on tables and code blocks with trackpad or Shift+Wheel."""
+        if self.slash_palette.isVisible():
+            self.slash_palette.hide()
+
         pos = event.position()
         delta_x = event.angleDelta().x()
         if delta_x == 0 and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
@@ -1182,6 +1262,70 @@ class MarkdownEditor(QTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle Escape exit, Ctrl+Enter toggling, smart list continuation, and Tab indentation."""
+        # 0. Intercept Slash Command Palette navigation and execution when open
+        if self.slash_palette.isVisible():
+            if event.key() == Qt.Key.Key_Escape:
+                self.slash_palette.hide()
+                event.accept()
+                return
+
+            if event.key() == Qt.Key.Key_Down:
+                self.slash_palette.select_next()
+                event.accept()
+                return
+
+            if event.key() == Qt.Key.Key_Up:
+                self.slash_palette.select_previous()
+                event.accept()
+                return
+
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                self.slash_palette.execute_current()
+                event.accept()
+                return
+
+            if event.key() == Qt.Key.Key_Backspace:
+                super().keyPressEvent(event)
+                cur_pos = self.textCursor().position()
+                if self._slash_start_pos is None or cur_pos < self._slash_start_pos - 1:
+                    self.slash_palette.hide()
+                else:
+                    if cur_pos < self._slash_start_pos:
+                        self.slash_palette.populate("")
+                    else:
+                        query = self.document().toPlainText()[self._slash_start_pos:cur_pos]
+                        self.slash_palette.populate(query)
+                return
+
+            if event.key() in (
+                Qt.Key.Key_Left,
+                Qt.Key.Key_Right,
+                Qt.Key.Key_Home,
+                Qt.Key.Key_End,
+                Qt.Key.Key_PageUp,
+                Qt.Key.Key_PageDown,
+            ):
+                self.slash_palette.hide()
+                super().keyPressEvent(event)
+                return
+
+            if event.text() and event.text().isprintable():
+                if event.text() == " ":
+                    self.slash_palette.hide()
+                    super().keyPressEvent(event)
+                    return
+                super().keyPressEvent(event)
+                cur_pos = self.textCursor().position()
+                if self._slash_start_pos is not None and cur_pos >= self._slash_start_pos:
+                    query = self.document().toPlainText()[self._slash_start_pos:cur_pos]
+                    if "\n" in query:
+                        self.slash_palette.hide()
+                    else:
+                        self.slash_palette.populate(query)
+                        if self.slash_palette.count() == 0:
+                            self.slash_palette.hide()
+                return
+
         cursor = self.textCursor()
         block = cursor.block()
         line_text = block.text()
@@ -1192,6 +1336,21 @@ class MarkdownEditor(QTextEdit):
             if block.blockNumber() == 0 and pos_in_block == 0 and not (event.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)):
                 self.up_at_top_requested.emit()
                 event.accept()
+                return
+
+        # Open Slash Command Palette on typing '/' at start of line or after space
+        if event.text() == "/" and not (
+            event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
+        ):
+            is_valid_trigger = (
+                pos_in_block == 0
+                or line_text[:pos_in_block].isspace()
+                or (pos_in_block > 0 and line_text[pos_in_block - 1] == " ")
+            )
+            if is_valid_trigger:
+                super().keyPressEvent(event)
+                self._slash_start_pos = self.textCursor().position()
+                self._show_slash_palette()
                 return
 
         # Escape key: exit active card editing mode and re-collapse back into rendered card
@@ -1623,6 +1782,7 @@ class EditorPanel(QWidget):
         """Load note markdown into the editor as pure plain text with live highlighting."""
         self._current_note = note
         self._save_timer.stop()
+        self.editor.slash_palette.hide()
         if self._title_timer.isActive():
             self._title_timer.stop()
 

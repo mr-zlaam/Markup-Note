@@ -2253,21 +2253,88 @@ class EditorPanel(QWidget):
             self.title_changed.emit(new_title)
 
     def _show_export_menu(self) -> None:
-        """Display sleek modern export dialog."""
+        """Display export format menu and launch native desktop file chooser."""
         if self._current_note is None and not self.editor.toPlainText().strip():
             return
 
-        from ui.dialogs import ModernExportDialog
+        menu = QMenu(self)
+        pdf_action = menu.addAction("Export as PDF (.pdf)")
+        html_dark_action = menu.addAction("Export as HTML (Dark)")
+        html_light_action = menu.addAction("Export as HTML (Light)")
+        md_action = menu.addAction("Export as Markdown (.md)")
+
+        action = menu.exec(self.export_btn.mapToGlobal(QPoint(0, self.export_btn.height() + 2)))
+        if not action:
+            return
+
         title = self.get_title()
+        safe_title = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() or "Untitled"
         content = self.get_content()
 
-        exported_path = ModernExportDialog.execute_export(self, title, content)
-        if exported_path is not None:
-            QToolTip.showText(
-                self.export_btn.mapToGlobal(QPoint(0, 0)),
-                f"Exported {exported_path.name} successfully!",
-                self.export_btn,
+        doc_dir = Path.home() / "Documents"
+        if not doc_dir.exists():
+            doc_dir = Path.home()
+
+        if action == pdf_action:
+            default_path = str(doc_dir / f"{safe_title}.pdf")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Note as PDF",
+                default_path,
+                "PDF Documents (*.pdf);;All Files (*)",
             )
+            if file_path:
+                target = Path(file_path)
+                if not target.suffix:
+                    target = target.with_suffix(".pdf")
+                from utils.exporter import export_note_to_pdf
+                if export_note_to_pdf(title, content, target):
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {target.name} successfully!",
+                        self.export_btn,
+                    )
+        elif action in (html_dark_action, html_light_action):
+            is_dark = (action == html_dark_action)
+            default_path = str(doc_dir / f"{safe_title}.html")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Note as HTML",
+                default_path,
+                "HTML Documents (*.html);;All Files (*)",
+            )
+            if file_path:
+                target = Path(file_path)
+                if not target.suffix:
+                    target = target.with_suffix(".html")
+                from utils.exporter import export_note_to_html
+                if export_note_to_html(title, content, target, dark_theme=is_dark):
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {target.name} successfully!",
+                        self.export_btn,
+                    )
+        elif action == md_action:
+            default_path = str(doc_dir / f"{safe_title}.md")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Note as Markdown",
+                default_path,
+                "Markdown Documents (*.md);;All Files (*)",
+            )
+            if file_path:
+                target = Path(file_path)
+                if not target.suffix:
+                    target = target.with_suffix(".md")
+                try:
+                    target.write_text(content, encoding="utf-8")
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {target.name} successfully!",
+                        self.export_btn,
+                    )
+                except Exception:
+                    pass
 
     def export_current_note(self) -> None:
         """Trigger export menu from shortcut (Ctrl+E)."""

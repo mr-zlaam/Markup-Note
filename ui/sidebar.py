@@ -171,7 +171,7 @@ class FolderSidebar(QWidget):
         self.tree_widget.setObjectName("SidebarTree")
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setIndentation(16)
-        self.tree_widget.setAnimated(False)
+        self.tree_widget.setAnimated(True)
         self.tree_widget.setIconSize(QSize(18, 18))
         self.tree_widget.setVerticalScrollMode(QTreeWidget.ScrollMode.ScrollPerPixel)
         self.tree_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)

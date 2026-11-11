@@ -137,9 +137,12 @@ def main() -> None:
         export_dlg_capture.close()
 
         # -------------------------------------------------------------
-        # 3. Test Sidebar Tree Chevrons & Seamless Selection
+        # 3. Test Sidebar Tree Chevrons & Slide Animation
         # -------------------------------------------------------------
-        print("3. Testing Sidebar Tree Chevrons & Seamless Styling...")
+        print("3. Testing Sidebar Tree Chevrons & Slide Animation...")
+        assert window.sidebar.tree_widget.isAnimated(), "Sidebar tree widget must have animation enabled!"
+        print("   Tree slide animation enabled: PASS")
+
         window.sidebar.set_folders(storage.get_folders(), current_selection=f_hero)
         app.processEvents()
 
@@ -160,9 +163,13 @@ def main() -> None:
         window.sidebar.grab().save(str(tree_expanded_path))
         print(f"   Sidebar expanded screenshot saved to {tree_expanded_path}")
 
-        # Collapse Hero and capture collapsed chevron (>)
+        # Collapse Hero and let the slide animation complete
         hero_item.setExpanded(False)
-        app.processEvents()
+        import time
+        for _ in range(35):
+            app.processEvents()
+            time.sleep(0.01)
+
         tree_collapsed_path = Path("/home/redhats/.gemini/antigravity/brain/70ac962d-bada-4915-826a-b9cd14afaf61/verified_sidebar_chevrons_collapsed.png")
         window.sidebar.grab().save(str(tree_collapsed_path))
         print(f"   Sidebar collapsed screenshot saved to {tree_collapsed_path}")

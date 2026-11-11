@@ -1,10 +1,18 @@
 """Application entry point for Markup Notes."""
 
+import os
 import signal
 import sys
 from pathlib import Path
 from types import FrameType
 from typing import Optional
+
+# Universal Linux Desktop Integration:
+# Ensure Qt delegates file dialogs and desktop features to XDG Desktop Portals
+# (GNOME/Nautilus, KDE/Dolphin, GTK) on all Wayland compositors (Niri, Hyprland, Sway)
+# and desktop environments, ensuring users always see their native system file chooser.
+if "QT_QPA_PLATFORMTHEME" not in os.environ:
+    os.environ["QT_QPA_PLATFORMTHEME"] = "xdgdesktopportal"
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon

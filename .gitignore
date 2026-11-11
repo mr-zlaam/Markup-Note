@@ -1,15 +1,40 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
-dist/
+*.pyo
+*.pyd
+*.egg-info/
 wheels/
-*.egg-info
 
 # Virtual environments
-.venv
+.venv/
+env/
+venv/
+ENV/
 
 # Build artifacts & packages
 build/
 dist/
+*.spec
 *.AppImage
+
+# Local user data & notes
+notes/
+markup_notes/
+
+# Development test dumps & scratch files
+scratch/
+*.log
+*.tmp
+
+# IDE & Editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.directory
+
+# Operating System files
+.DS_Store
+Thumbs.db

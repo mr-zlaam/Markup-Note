@@ -89,7 +89,7 @@ cp "$PROJECT_ROOT/assets/icons/markup-notes-512x512.png" "$APPDIR/.DirIcon"
 cat << 'EOF' > "$APPDIR/markup-notes.desktop"
 [Desktop Entry]
 Name=Markup Notes
-Comment=Lightweight Markdown Notes for Electron haters
+Comment=Notes App for Electron haters
 Exec=markup-notes %F
 Icon=markup-notes
 Terminal=false

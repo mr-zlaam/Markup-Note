@@ -1,10 +1,11 @@
 [Desktop Entry]
 Name=Markup Notes
 Comment=Notes App for Electron haters
-Exec=python3 /home/redhats/Work/Desktop-apps/Note-Taker/main.py
+Exec=sh -c 'DIR="$(dirname "$(readlink -f "$1")")"; exec python3 "$DIR/main.py"' _ %k
 Icon=markup-notes
 Terminal=false
 Type=Application
 Categories=Office;Utility;TextEditor;
 Keywords=markdown;notes;editor;text;
 StartupNotify=true
+MimeType=text/markdown;text/plain;

@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Build artifacts & packages
+build/
+dist/
+*.AppImage

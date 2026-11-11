@@ -28,9 +28,19 @@ class MainWindow(QMainWindow):
         super().__init__(parent=parent)
         self.setWindowTitle("Markup Notes")
 
-        icon_path = Path(__file__).resolve().parent.parent / "assets" / "markup-note.png"
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
+        app_icon = QIcon()
+        icons_dir = Path(__file__).resolve().parent.parent / "assets" / "icons"
+        if icons_dir.exists():
+            for size in (16, 24, 32, 48, 64, 128, 256, 512):
+                size_path = icons_dir / f"markup-notes-{size}x{size}.png"
+                if size_path.exists():
+                    app_icon.addFile(str(size_path))
+        if app_icon.isNull():
+            fallback_icon = Path(__file__).resolve().parent.parent / "assets" / "markup-note.png"
+            if fallback_icon.exists():
+                app_icon = QIcon(str(fallback_icon))
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
 
         # Load persisted settings from ~/.config/markup-notes/settings.json
         self.config_manager = config_manager if config_manager is not None else ConfigManager()

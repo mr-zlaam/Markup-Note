@@ -748,3 +748,58 @@ def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path
 
     return right_path, down_path
 
+
+STANDARD_ICON_SIZES: List[int] = [16, 24, 32, 48, 64, 128, 256, 512]
+
+
+def generate_standard_app_icons(
+    source_icon_path: Optional[Path] = None,
+    assets_root: Optional[Path] = None,
+) -> List[Path]:
+    """Generate all standard Linux XDG hicolor icon sizes from the high-res app icon.
+
+    Creates both XDG hicolor tree (assets/icons/hicolor/<size>x<size>/apps/markup-notes.png)
+    and top-level convenience icons (assets/icons/markup-notes-<size>x<size>.png).
+    """
+    from PyQt6.QtGui import QImage
+
+    project_root = Path(__file__).resolve().parent.parent
+    src = (
+        source_icon_path
+        if source_icon_path is not None
+        else project_root / "assets" / "markup-note.png"
+    )
+    if not src.exists():
+        return []
+
+    orig_image = QImage(str(src))
+    if orig_image.isNull():
+        return []
+
+    base_assets = assets_root if assets_root is not None else project_root / "assets"
+    generated_paths: List[Path] = []
+
+    for size in STANDARD_ICON_SIZES:
+        scaled = orig_image.scaled(
+            size,
+            size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        # 1. Standard XDG hicolor structure:
+        # assets/icons/hicolor/<size>x<size>/apps/markup-notes.png
+        hicolor_dir = base_assets / "icons" / "hicolor" / f"{size}x{size}" / "apps"
+        hicolor_dir.mkdir(parents=True, exist_ok=True)
+        hicolor_file = hicolor_dir / "markup-notes.png"
+        scaled.save(str(hicolor_file), "PNG")
+        generated_paths.append(hicolor_file)
+
+        # 2. Top-level size icon for quick referencing
+        flat_dir = base_assets / "icons"
+        flat_dir.mkdir(parents=True, exist_ok=True)
+        flat_file = flat_dir / f"markup-notes-{size}x{size}.png"
+        scaled.save(str(flat_file), "PNG")
+        generated_paths.append(flat_file)
+
+    return generated_paths
+

@@ -90,7 +90,7 @@ QTextEdit#MarkdownEditor, QPlainTextEdit#MarkdownEditor {
     background-color: #1e1e1e;
     color: #e6e6e6;
     border: none;
-    padding: 24px 36px;
+    padding: 6px 36px 24px 36px;
     font-size: 16px;
     selection-background-color: #0a84ff;
     selection-color: #ffffff;

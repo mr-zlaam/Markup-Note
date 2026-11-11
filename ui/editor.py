@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTextEdit,
     QToolTip,
@@ -75,8 +76,55 @@ from utils.table import (
 )
 
 
+class NoteTitleEdit(QLineEdit):
+    """Frameless modern note title input with smooth keyboard navigation (Notion/Craft aesthetic)."""
+
+    down_pressed = pyqtSignal()
+    enter_pressed = pyqtSignal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent=parent)
+        self.setObjectName("NoteTitleEdit")
+        self.setPlaceholderText("Untitled")
+        title_font = QFont("Cantarell", 22)
+        title_font.setPointSize(22)
+        title_font.setBold(True)
+        self.setFont(title_font)
+        self.setStyleSheet("""
+            QLineEdit#NoteTitleEdit {
+                background-color: transparent;
+                border: none;
+                color: #ffffff;
+                font-size: 26px;
+                font-weight: 700;
+                padding: 10px 36px 4px 36px;
+                selection-background-color: #0a84ff;
+            }
+            QLineEdit#NoteTitleEdit:focus {
+                border: none;
+                background-color: transparent;
+            }
+            QLineEdit#NoteTitleEdit:disabled {
+                color: #555555;
+            }
+        """)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.enter_pressed.emit()
+            event.accept()
+            return
+        elif event.key() == Qt.Key.Key_Down:
+            self.down_pressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class MarkdownEditor(QTextEdit):
     """Pure plain-text Markdown editor with cursor-aware Obsidian Live Preview."""
+
+    up_at_top_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -1139,6 +1187,13 @@ class MarkdownEditor(QTextEdit):
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
 
+        # Up arrow at the very top of document: jump up to NoteTitleEdit
+        if event.key() == Qt.Key.Key_Up:
+            if block.blockNumber() == 0 and pos_in_block == 0 and not (event.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)):
+                self.up_at_top_requested.emit()
+                event.accept()
+                return
+
         # Escape key: exit active card editing mode and re-collapse back into rendered card
         if event.key() == Qt.Key.Key_Escape:
             b_num = block.blockNumber()
@@ -1465,9 +1520,10 @@ class MarkdownEditor(QTextEdit):
 
 
 class EditorPanel(QWidget):
-    """Right pane editor containing metadata header and the editor canvas."""
+    """Right pane editor containing metadata header, note title, and the editor canvas."""
 
     content_saved = pyqtSignal(str)  # Emits new content when debounced auto-save fires
+    title_changed = pyqtSignal(str)  # Emits new title when debounced title editing fires
     create_note_with_content = pyqtSignal(str)  # Emitted when user types on empty canvas
     delete_requested = pyqtSignal()
     expand_notes_requested = pyqtSignal()
@@ -1476,18 +1532,24 @@ class EditorPanel(QWidget):
         super().__init__(parent=parent)
         self._current_note: Optional[Note] = None
 
-        # Debounce timer for smooth non-blocking auto-save
+        # Debounce timer for smooth non-blocking auto-save of body content
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(400)
         self._save_timer.timeout.connect(self._trigger_auto_save)
+
+        # Debounce timer for note title editing / renaming
+        self._title_timer = QTimer(self)
+        self._title_timer.setSingleShot(True)
+        self._title_timer.setInterval(350)
+        self._title_timer.timeout.connect(self._flush_title_change)
 
         self._init_ui()
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 12)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         # Header bar (Folder name, word count, delete button)
         header = QHBoxLayout()
@@ -1516,23 +1578,71 @@ class EditorPanel(QWidget):
 
         layout.addLayout(header)
 
+        # Frameless note title input (Notion/Craft aesthetic)
+        self.title_edit = NoteTitleEdit(parent=self)
+        self.title_edit.setEnabled(False)
+        self.title_edit.enter_pressed.connect(self._on_title_enter_or_down)
+        self.title_edit.down_pressed.connect(self._on_title_enter_or_down)
+        self.title_edit.textEdited.connect(self._on_title_edited)
+        self.title_edit.editingFinished.connect(self._flush_title_change)
+        layout.addWidget(self.title_edit)
+
         # Editor canvas
         self.editor = MarkdownEditor(parent=self)
         self.editor.textChanged.connect(self._on_text_changed)
+        self.editor.up_at_top_requested.connect(self._on_up_at_top)
         layout.addWidget(self.editor)
+
+    def _on_title_enter_or_down(self) -> None:
+        """Move cursor from title edit into the start of the markdown editor body."""
+        self._flush_title_change()
+        self.editor.setFocus()
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.editor.setTextCursor(cursor)
+
+    def _on_up_at_top(self) -> None:
+        """Jump focus back into title edit when pressing Up arrow at position (0, 0)."""
+        self.title_edit.setFocus()
+        self.title_edit.setCursorPosition(len(self.title_edit.text()))
+
+    def _on_title_edited(self, text: str) -> None:
+        self._title_timer.start()
+
+    def _flush_title_change(self) -> None:
+        if self._title_timer.isActive():
+            self._title_timer.stop()
+        new_title = self.title_edit.text().strip()
+        if not new_title:
+            new_title = "Untitled"
+            self.title_edit.setText(new_title)
+        if self._current_note is not None and new_title != self._current_note.title:
+            self.title_changed.emit(new_title)
 
     def load_note(self, note: Optional[Note]) -> None:
         """Load note markdown into the editor as pure plain text with live highlighting."""
         self._current_note = note
         self._save_timer.stop()
+        if self._title_timer.isActive():
+            self._title_timer.stop()
 
         if note is None:
+            self.title_edit.blockSignals(True)
+            self.title_edit.setText("")
+            self.title_edit.setEnabled(False)
+            self.title_edit.blockSignals(False)
+
             self.editor.blockSignals(True)
             self.editor.setPlainText("")
             self.meta_label.setText("No note selected")
             self.word_count_label.setText("0 words")
             self.editor.blockSignals(False)
             return
+
+        self.title_edit.setEnabled(True)
+        self.title_edit.blockSignals(True)
+        self.title_edit.setText(note.title)
+        self.title_edit.blockSignals(False)
 
         # Clean any accidental escaped headings (\# ) and normalize "- []" to "- [ ]"
         cleaned_content = re.sub(r"^\\(#+\s)", r"\1", note.content, flags=re.MULTILINE)
@@ -1561,6 +1671,14 @@ class EditorPanel(QWidget):
         self._current_note = note
         folder_name = note.path.parent.name
         self.meta_label.setText(f"{folder_name}  •  Edited {note.formatted_time}")
+        if self.title_edit.text() != note.title:
+            self.title_edit.blockSignals(True)
+            self.title_edit.setText(note.title)
+            self.title_edit.blockSignals(False)
+
+    def get_title(self) -> str:
+        """Return the current title edit text."""
+        return self.title_edit.text().strip() or "Untitled"
 
     def get_content(self) -> str:
         """Return the pure plain-text Markdown content."""
@@ -1575,7 +1693,9 @@ class EditorPanel(QWidget):
         self.word_count_label.setText(f"{words} words")
 
     def flush_pending_save(self) -> None:
-        """Immediately flush any pending debounced save before application exit."""
+        """Immediately flush any pending debounced save before application exit or switch."""
+        if self._title_timer.isActive():
+            self._flush_title_change()
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._trigger_auto_save()

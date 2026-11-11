@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         # 3. Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
         self.editor.content_saved.connect(self._on_content_saved)
+        self.editor.title_changed.connect(self._on_note_title_changed)
         self.editor.create_note_with_content.connect(self._on_create_note_with_content)
         self.editor.delete_requested.connect(self._on_delete_note)
         self.editor.expand_notes_requested.connect(self._toggle_notes_list)
@@ -248,14 +249,14 @@ class MainWindow(QMainWindow):
         if new_note is not None:
             self._current_note = None
             self._refresh_notes(preserve_path=str(new_note.path), emit_selection=True)
-            self.editor.editor.setFocus()
+            self.editor.title_edit.setFocus()
+            self.editor.title_edit.selectAll()
         QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_create_note_with_content(self, initial_content: str) -> None:
         """Create a new note with typed content when user writes on empty canvas."""
         self._is_saving_internally = True
-        title, _ = Note.parse_title_and_snippet(initial_content, fallback_title="New Note")
-        new_note = self.storage.create_note(folder=self._current_folder, initial_title=title)
+        new_note = self.storage.create_note(folder=self._current_folder, initial_title="Untitled")
         if new_note is not None:
             self.storage.save_note_content(new_note.path, initial_content)
             self._current_note = Note.from_file(new_note.path)
@@ -275,22 +276,37 @@ class MainWindow(QMainWindow):
             self._is_saving_internally = False
             return
 
-        # Update note model
-        new_title, new_snippet = Note.parse_title_and_snippet(
-            new_content, fallback_title=current_path.stem
-        )
-
-        # Rename file if title changed
-        renamed_path = self.storage.rename_note_file(current_path, new_title)
-        if renamed_path != current_path:
-            self._transfer_note_color(str(current_path), str(renamed_path))
-
-        # Update current note instance and card in-place without reloading editor
-        self._current_note = Note.from_file(renamed_path)
+        # Update current note instance and card preview snippet without renaming file
+        self._current_note = Note.from_file(current_path)
         if self._current_note is not None:
             self.editor.update_meta(self._current_note)
             self.note_list.update_note_card(str(current_path), self._current_note)
             self._all_current_notes = self.storage.list_notes(self._current_folder)
+
+        QTimer.singleShot(500, self._clear_saving_flag)
+
+    def _on_note_title_changed(self, new_title: str) -> None:
+        """Rename note file when user edits the title in the editor panel."""
+        if self._current_note is None:
+            return
+
+        sanitized_title = self.storage.sanitize_filename(new_title)
+        if not sanitized_title:
+            return
+
+        current_path = self._current_note.path
+        if sanitized_title == current_path.stem:
+            return
+
+        self._is_saving_internally = True
+        renamed_path = self.storage.rename_note_file(current_path, sanitized_title)
+        if renamed_path != current_path:
+            self._transfer_note_color(str(current_path), str(renamed_path))
+            self._current_note = Note.from_file(renamed_path)
+            if self._current_note is not None:
+                self.editor.update_meta(self._current_note)
+                self.note_list.update_note_card(str(current_path), self._current_note)
+                self._all_current_notes = self.storage.list_notes(self._current_folder)
 
         QTimer.singleShot(500, self._clear_saving_flag)
 
@@ -390,16 +406,9 @@ class MainWindow(QMainWindow):
         )
         if ok and new_title and new_title != note.title:
             self._is_saving_internally = True
-            content = note.content
-            lines = content.split("\n")
-            if lines and lines[0].startswith("# "):
-                lines[0] = f"# {new_title}"
-                content = "\n".join(lines)
-
             renamed_path = self.storage.rename_note_file(note.path, new_title)
             if renamed_path != note.path:
                 self._transfer_note_color(str(note.path), str(renamed_path))
-            self.storage.save_note_content(renamed_path, content)
 
             updated_note = Note.from_file(renamed_path)
             if updated_note is not None:

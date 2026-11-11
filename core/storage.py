@@ -64,12 +64,12 @@ class StorageManager:
         notes.sort(key=lambda n: n.modified_at, reverse=True)
         return notes
 
-    def create_note(self, folder: Optional[Path] = None, initial_title: str = "New Note") -> Optional[Note]:
+    def create_note(self, folder: Optional[Path] = None, initial_title: str = "Untitled") -> Optional[Note]:
         """Create a new empty markdown note file and return its Note instance."""
         target_dir = folder if folder is not None else self.root_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        base_name = self.sanitize_filename(initial_title) or "Note"
+        base_name = self.sanitize_filename(initial_title) or "Untitled"
         file_path = target_dir / f"{base_name}.md"
 
         counter = 1

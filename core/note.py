@@ -37,7 +37,8 @@ class Note:
         except (FileNotFoundError, PermissionError, UnicodeDecodeError):
             return None
 
-        title, snippet = cls.parse_title_and_snippet(content, fallback_title=path.stem)
+        title = path.stem
+        _, snippet = cls.parse_title_and_snippet(content, fallback_title=title)
         return cls(
             path=path,
             title=title,
@@ -49,12 +50,12 @@ class Note:
 
     @staticmethod
     def parse_title_and_snippet(
-        content: str, fallback_title: str = "New Note"
+        content: str, fallback_title: str = "Untitled"
     ) -> tuple[str, str]:
         """Extract the note's title and a 2-line preview snippet from markdown content.
 
-        The title is the first non-empty line (with markdown headers `#` stripped).
-        The snippet is composed of the following non-empty lines, with markdown syntax cleaned.
+        The title defaults to the note's filename.
+        The snippet is composed of the non-empty lines from the markdown body.
         """
         lines = [line.strip() for line in content.splitlines()]
         non_empty = [line for line in lines if line]
@@ -62,18 +63,18 @@ class Note:
         if not non_empty:
             return fallback_title, "No additional text"
 
-        # First line is title
+        # Determine if first line duplicates the title (e.g. '# Title')
         raw_first = non_empty[0]
-        title = re.sub(
+        cleaned_first = re.sub(
             r"^(\s*[-*+]\s*\[[ xX]?\]\s*|\s*\\?#+\s*|\s*>+\s*)", "", raw_first
         ).strip()
-        title = re.sub(r"(\*\*|__|~~|`|\*)", "", title).strip()
-        if not title:
-            title = fallback_title
+        cleaned_first = re.sub(r"(\*\*|__|~~|`|\*)", "", cleaned_first).strip()
+
+        start_idx = 1 if cleaned_first.lower() == fallback_title.lower() else 0
 
         # Collect subsequent lines for the snippet
         snippet_lines = []
-        for line in non_empty[1:]:
+        for line in non_empty[start_idx:]:
             # Clean common markdown markers from snippet (checkboxes, bullets, headers, inline markers)
             cleaned = re.sub(
                 r"^(\s*[-*+]\s*\[[ xX]?\]\s*|\s*[-*+]\s*|\s*\d+\.\s*|\s*\\?#+\s*|\s*>+\s*)",
@@ -87,4 +88,4 @@ class Note:
                 break
 
         snippet = " ".join(snippet_lines) if snippet_lines else "No additional text"
-        return title, snippet
+        return fallback_title, snippet

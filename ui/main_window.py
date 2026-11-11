@@ -132,6 +132,10 @@ class MainWindow(QMainWindow):
         replace_sc = QShortcut(QKeySequence("Ctrl+H"), self)
         replace_sc.activated.connect(self._on_ctrl_h)
 
+        # Export Note (Ctrl+E)
+        export_sc = QShortcut(QKeySequence("Ctrl+E"), self)
+        export_sc.activated.connect(self.editor.export_current_note)
+
         # Delete Note (Ctrl+D)
         delete_sc = QShortcut(QKeySequence("Ctrl+D"), self)
         delete_sc.activated.connect(self._on_delete_note)
@@ -255,8 +259,10 @@ class MainWindow(QMainWindow):
         self._current_folder = folder
         self._refresh_notes()
 
-    def _on_create_folder(self, folder_name: str) -> None:
-        new_folder = self.storage.create_folder(folder_name)
+    def _on_create_folder(
+        self, folder_name: str, parent_folder: Optional[Path] = None
+    ) -> None:
+        new_folder = self.storage.create_folder(folder_name, parent_folder=parent_folder)
         if new_folder is not None:
             folders = self.storage.get_folders()
             self.sidebar.set_folders(folders, current_selection=new_folder)

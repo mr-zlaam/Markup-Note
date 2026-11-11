@@ -18,30 +18,39 @@ QSplitter::handle:horizontal {
     width: 1px;
 }
 
-/* Sidebar List */
-QListWidget#SidebarList {
+/* Sidebar List & Tree */
+QListWidget#SidebarList, QTreeWidget#SidebarTree {
     background-color: #181818;
     border: none;
     padding: 8px 4px;
     outline: none;
+    show-decoration-selected: 1;
 }
 
-QListWidget#SidebarList::item {
-    padding: 8px 12px;
-    border-radius: 6px;
-    margin: 2px 6px;
+QListWidget#SidebarList::item, QTreeWidget#SidebarTree::item {
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin: 1px 2px;
     color: #b0b0b0;
     font-weight: 500;
 }
 
-QListWidget#SidebarList::item:selected {
+QListWidget#SidebarList::item:selected, QTreeWidget#SidebarTree::item:selected {
     background-color: #2a2a2a;
     color: #f3f3f3;
 }
 
-QListWidget#SidebarList::item:hover:!selected {
+QListWidget#SidebarList::item:hover:!selected, QTreeWidget#SidebarTree::item:hover:!selected {
     background-color: #222222;
     color: #e0e0e0;
+}
+
+QTreeWidget#SidebarTree::branch {
+    background: transparent;
+}
+
+QTreeWidget#SidebarTree::branch:selected {
+    background-color: #2a2a2a;
 }
 
 /* Note Cards List */

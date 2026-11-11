@@ -686,3 +686,42 @@ def create_number_list_icon(
 
     painter.end()
     return QIcon(pixmap)
+
+
+def create_export_icon(
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.5,
+) -> QIcon:
+    """Generate a clean vector export/share icon (arrow emerging from tray)."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+
+    # Tray
+    path = QPainterPath()
+    path.moveTo(3.0, 7.5)
+    path.lineTo(3.0, 13.0)
+    path.lineTo(13.0, 13.0)
+    path.lineTo(13.0, 7.5)
+    painter.drawPath(path)
+
+    # Arrow pointing up out of tray
+    arrow = QPainterPath()
+    arrow.moveTo(8.0, 10.0)
+    arrow.lineTo(8.0, 2.5)
+    arrow.moveTo(5.0, 5.5)
+    arrow.lineTo(8.0, 2.5)
+    arrow.lineTo(11.0, 5.5)
+    painter.drawPath(arrow)
+
+    painter.end()
+    return QIcon(pixmap)

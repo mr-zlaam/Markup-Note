@@ -1,6 +1,7 @@
 """Editor canvas panel with Obsidian-style cursor-aware Live Preview and debounced auto-save."""
 
 import math
+from pathlib import Path
 import re
 import time
 from typing import Optional
@@ -25,9 +26,11 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTextEdit,
     QToolTip,
@@ -40,8 +43,9 @@ from ui.find_replace import FindReplaceBar
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from ui.selection_toolbar import SelectionFormatToolbar
 from ui.slash_menu import SlashCommand, SlashCommandPalette
+from utils.exporter import export_note_to_html, export_note_to_pdf
 from utils.touch import TouchScrollTracker, is_touch_event
-from utils.icons import create_notes_toggle_icon, create_sidebar_toggle_icon
+from utils.icons import create_export_icon, create_notes_toggle_icon, create_sidebar_toggle_icon
 from utils.code_engine import (
     CodeRegion,
     get_code_content_width,
@@ -2123,8 +2127,18 @@ class EditorPanel(QWidget):
         header.addStretch()
 
         self.word_count_label = QLabel("0 words", parent=self)
-        self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 12px;")
+        self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 6px;")
         header.addWidget(self.word_count_label)
+
+        # Export Note Button (PDF / HTML / Markdown)
+        self.export_btn = QPushButton(parent=self)
+        self.export_btn.setObjectName("IconButton")
+        self.export_btn.setIcon(create_export_icon("#8e8e93", size=15))
+        self.export_btn.setToolTip("Export Note (Ctrl+E)")
+        self.export_btn.setFixedSize(26, 26)
+        self.export_btn.setEnabled(False)
+        self.export_btn.clicked.connect(self._show_export_menu)
+        header.addWidget(self.export_btn)
 
         layout.addLayout(header)
 
@@ -2238,6 +2252,76 @@ class EditorPanel(QWidget):
         if self._current_note is not None and new_title != self._current_note.title:
             self.title_changed.emit(new_title)
 
+    def _show_export_menu(self) -> None:
+        """Display dropdown menu with PDF, HTML, and Markdown export choices."""
+        if self._current_note is None and not self.editor.toPlainText().strip():
+            return
+
+        menu = QMenu(self)
+        pdf_action = menu.addAction("Export as PDF (.pdf)")
+        html_dark_action = menu.addAction("Export as HTML (Dark)")
+        html_light_action = menu.addAction("Export as HTML (Light)")
+        md_action = menu.addAction("Export as Markdown (.md)")
+
+        action = menu.exec(self.export_btn.mapToGlobal(QPoint(0, self.export_btn.height() + 2)))
+        if not action:
+            return
+
+        title = self.get_title()
+        safe_title = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() or "Untitled"
+        content = self.get_content()
+
+        doc_dir = Path.home() / "Documents"
+        if not doc_dir.exists():
+            doc_dir = Path.home()
+
+        if action == pdf_action:
+            default_path = str(doc_dir / f"{safe_title}.pdf")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Note as PDF", default_path, "PDF Documents (*.pdf)"
+            )
+            if file_path:
+                ok = export_note_to_pdf(title, content, Path(file_path))
+                if ok:
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {Path(file_path).name} successfully!",
+                        self.export_btn,
+                    )
+        elif action in (html_dark_action, html_light_action):
+            is_dark = (action == html_dark_action)
+            default_path = str(doc_dir / f"{safe_title}.html")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Note as HTML", default_path, "HTML Documents (*.html)"
+            )
+            if file_path:
+                ok = export_note_to_html(title, content, Path(file_path), dark_theme=is_dark)
+                if ok:
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {Path(file_path).name} successfully!",
+                        self.export_btn,
+                    )
+        elif action == md_action:
+            default_path = str(doc_dir / f"{safe_title}.md")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Note as Markdown", default_path, "Markdown Documents (*.md)"
+            )
+            if file_path:
+                try:
+                    Path(file_path).write_text(content, encoding="utf-8")
+                    QToolTip.showText(
+                        self.export_btn.mapToGlobal(QPoint(0, 0)),
+                        f"Exported {Path(file_path).name} successfully!",
+                        self.export_btn,
+                    )
+                except Exception:
+                    pass
+
+    def export_current_note(self) -> None:
+        """Trigger export menu from shortcut (Ctrl+E)."""
+        self._show_export_menu()
+
     def load_note(self, note: Optional[Note]) -> None:
         """Load note markdown into the editor as pure plain text with live highlighting."""
         self._current_note = note
@@ -2249,6 +2333,7 @@ class EditorPanel(QWidget):
             self._title_timer.stop()
 
         if note is None:
+            self.export_btn.setEnabled(False)
             self.title_edit.blockSignals(True)
             self.title_edit.setText("")
             self.title_edit.setEnabled(False)
@@ -2261,6 +2346,7 @@ class EditorPanel(QWidget):
             self.editor.blockSignals(False)
             return
 
+        self.export_btn.setEnabled(True)
         self.title_edit.setEnabled(True)
         self.title_edit.blockSignals(True)
         self.title_edit.setText(note.title)

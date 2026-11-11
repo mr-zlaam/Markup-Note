@@ -18,22 +18,31 @@ class StorageManager:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def get_folders(self) -> List[Path]:
-        """Return all subdirectories under root_dir (representing note folders)."""
+        """Return all subdirectories under root_dir recursively (excluding hidden/trash)."""
         folders: List[Path] = []
         try:
-            for item in sorted(self.root_dir.iterdir()):
-                if item.is_dir() and not item.name.startswith("."):
-                    folders.append(item)
+            for item in sorted(self.root_dir.rglob("*")):
+                if item.is_dir():
+                    rel_parts = item.relative_to(self.root_dir).parts
+                    if not any(part.startswith(".") for part in rel_parts):
+                        folders.append(item)
         except (PermissionError, FileNotFoundError):
             pass
         return folders
 
-    def create_folder(self, folder_name: str) -> Optional[Path]:
-        """Create a new subfolder under root_dir."""
+    def create_folder(
+        self, folder_name: str, parent_folder: Optional[Path] = None
+    ) -> Optional[Path]:
+        """Create a new folder under root_dir or under a specified parent folder."""
         safe_name = self.sanitize_filename(folder_name)
         if not safe_name:
             return None
-        folder_path = self.root_dir / safe_name
+        base_dir = (
+            parent_folder
+            if (parent_folder is not None and parent_folder.exists())
+            else self.root_dir
+        )
+        folder_path = base_dir / safe_name
         try:
             folder_path.mkdir(parents=True, exist_ok=True)
             return folder_path
@@ -41,17 +50,31 @@ class StorageManager:
             return None
 
     def list_notes(self, folder: Optional[Path] = None) -> List[Note]:
-        """List all markdown notes in the specified folder (or root if None).
+        """List all markdown notes in the specified folder (or all notes recursively if None).
 
         Returns notes sorted by most recently modified first.
         """
-        target_dir = folder if folder is not None else self.root_dir
-        if not target_dir.exists() or not target_dir.is_dir():
+        if folder is None:
+            notes: List[Note] = []
+            try:
+                for file_path in self.root_dir.rglob("*.md"):
+                    rel_parts = file_path.relative_to(self.root_dir).parts
+                    if any(part.startswith(".") for part in rel_parts):
+                        continue
+                    note = Note.from_file(file_path)
+                    if note is not None:
+                        notes.append(note)
+            except (PermissionError, OSError):
+                return []
+            notes.sort(key=lambda n: n.modified_at, reverse=True)
+            return notes
+
+        if not folder.exists() or not folder.is_dir():
             return []
 
         notes: List[Note] = []
         try:
-            for file_path in target_dir.glob("*.md"):
+            for file_path in folder.glob("*.md"):
                 if file_path.name.startswith("."):
                     continue
                 note = Note.from_file(file_path)
@@ -60,7 +83,6 @@ class StorageManager:
         except (PermissionError, OSError):
             return []
 
-        # Sort newest modified first
         notes.sort(key=lambda n: n.modified_at, reverse=True)
         return notes
 
@@ -149,11 +171,11 @@ class StorageManager:
             return False
 
     def rename_folder(self, folder_path: Path, new_name: str) -> Optional[Path]:
-        """Rename a subfolder under root_dir."""
+        """Rename a folder."""
         safe_name = self.sanitize_filename(new_name)
         if not safe_name:
             return None
-        target_path = self.root_dir / safe_name
+        target_path = folder_path.parent / safe_name
         if target_path == folder_path:
             return folder_path
         if target_path.exists():

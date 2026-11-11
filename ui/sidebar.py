@@ -1,4 +1,4 @@
-"""Sidebar widget displaying folders, navigation categories, and folder management."""
+"""Sidebar widget displaying folders tree hierarchy, navigation categories, and folder management."""
 
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -8,12 +8,12 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QPushButton,
     QScroller,
     QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -34,12 +34,12 @@ from utils.icons import (
 
 
 class FolderSidebar(QWidget):
-    """Left sidebar widget displaying folder hierarchy for notes with batch management."""
+    """Left sidebar widget displaying folder hierarchy tree for notes with subfolder creation."""
 
     # Signal emitted when a folder is selected. None represents 'All Notes'.
     folder_selected = pyqtSignal(object)
-    # Signal emitted when user requests a new folder
-    create_folder_requested = pyqtSignal(str)
+    # Signal emitted when user requests a new folder or subfolder: (folder_name, parent_folder_or_None)
+    create_folder_requested = pyqtSignal(str, object)
     # Signal emitted when user clicks the sidebar collapse button
     collapse_requested = pyqtSignal()
     # Folder management signals
@@ -85,7 +85,9 @@ class FolderSidebar(QWidget):
         header_layout.setSpacing(4)
 
         title_label = QLabel("Folders", parent=normal_header_widget)
-        title_label.setStyleSheet("font-weight: 600; color: #888888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;")
+        title_label.setStyleSheet(
+            "font-weight: 600; color: #888888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;"
+        )
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
@@ -164,20 +166,25 @@ class FolderSidebar(QWidget):
         self.header_stack.addWidget(batch_header_widget)
         layout.addWidget(self.header_stack, 0)
 
-        # Folder List
-        self.list_widget = QListWidget(parent=self)
-        self.list_widget.setObjectName("SidebarList")
-        self.list_widget.setIconSize(QSize(18, 18))
-        self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-        self.list_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
-        QScroller.grabGesture(self.list_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture)
+        # Folder Tree Widget
+        self.tree_widget = QTreeWidget(parent=self)
+        self.tree_widget.setObjectName("SidebarTree")
+        self.tree_widget.setHeaderHidden(True)
+        self.tree_widget.setIndentation(16)
+        self.tree_widget.setAnimated(True)
+        self.tree_widget.setIconSize(QSize(18, 18))
+        self.tree_widget.setVerticalScrollMode(QTreeWidget.ScrollMode.ScrollPerPixel)
+        self.tree_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        QScroller.grabGesture(
+            self.tree_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture
+        )
 
-        self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
-        self.list_widget.itemClicked.connect(self._on_item_clicked)
-        self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.list_widget.customContextMenuRequested.connect(self._on_context_menu)
+        self.tree_widget.itemSelectionChanged.connect(self._on_selection_changed)
+        self.tree_widget.itemClicked.connect(self._on_item_clicked)
+        self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_widget.customContextMenuRequested.connect(self._on_context_menu)
 
-        layout.addWidget(self.list_widget, 1)
+        layout.addWidget(self.tree_widget, 1)
 
     def enter_selection_mode(self, initial_folder: Optional[Path] = None) -> None:
         """Enter folder selection mode."""
@@ -231,11 +238,11 @@ class FolderSidebar(QWidget):
         if self._selected_folders:
             self.delete_folders_batch_requested.emit(list(self._selected_folders))
 
-    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+    def _on_item_clicked(self, item: QTreeWidgetItem, column: int = 0) -> None:
         """Toggle folder selection if in selection mode."""
         if not self._is_selection_mode:
             return
-        folder = item.data(Qt.ItemDataRole.UserRole)
+        folder = item.data(0, Qt.ItemDataRole.UserRole)
         if folder is None:
             # 'All Notes' cannot be selected for folder deletion
             return
@@ -248,16 +255,17 @@ class FolderSidebar(QWidget):
 
     def _on_context_menu(self, pos: QPoint) -> None:
         """Display sleek context menu for folder."""
-        item = self.list_widget.itemAt(pos)
+        item = self.tree_widget.itemAt(pos)
         if item is None:
             return
 
-        folder: Optional[Path] = item.data(Qt.ItemDataRole.UserRole)
+        folder: Optional[Path] = item.data(0, Qt.ItemDataRole.UserRole)
         folder_name = folder.name if folder is not None else "All Notes"
         menu = QMenu(self)
 
         if folder is not None:
-            # Custom Folder
+            # Custom Folder or Subfolder
+            new_subfolder_act = menu.addAction("New Subfolder...")
             rename_act = menu.addAction("Rename Folder...")
             select_act = menu.addAction("Select...")
 
@@ -268,8 +276,14 @@ class FolderSidebar(QWidget):
             menu.addSeparator()
             delete_act = menu.addAction("Delete Folder")
 
-            action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
-            if action == rename_act:
+            action = menu.exec(self.tree_widget.viewport().mapToGlobal(pos))
+            if action == new_subfolder_act:
+                subfolder_name, ok = ModernInputDialog.get_text(
+                    self, "New Subfolder", f"Create subfolder inside '{folder.name}':"
+                )
+                if ok and subfolder_name.strip():
+                    self.create_folder_requested.emit(subfolder_name.strip(), folder)
+            elif action == rename_act:
                 self.rename_folder_requested.emit(folder)
             elif action == select_act:
                 self.enter_selection_mode(initial_folder=folder)
@@ -277,13 +291,16 @@ class FolderSidebar(QWidget):
                 self.delete_folder_requested.emit(folder)
         else:
             # 'All Notes'
+            new_folder_act = menu.addAction("New Folder...")
             select_act = menu.addAction("Select Notes...")
 
             color_menu = menu.addMenu("Color")
             self._populate_color_menu(color_menu, folder_name)
 
-            action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
-            if action == select_act:
+            action = menu.exec(self.tree_widget.viewport().mapToGlobal(pos))
+            if action == new_folder_act:
+                self._on_add_folder_clicked()
+            elif action == select_act:
                 self.select_all_notes_requested.emit()
 
     def _populate_color_menu(self, color_menu: QMenu, folder_name: str) -> None:
@@ -319,57 +336,83 @@ class FolderSidebar(QWidget):
             self._apply_folder_color(folder_name, color.name())
 
     def set_folders(self, folders: List[Path], current_selection: Optional[Path] = None) -> None:
-        """Populate the sidebar with 'All Notes' and custom folders."""
+        """Populate the sidebar with 'All Notes' and custom folders tree."""
         self._folders = folders
         self._update_folder_items(current_selection)
 
     def _update_folder_items(self, current_selection: Optional[Path] = None) -> None:
-        """Render folder items with selection icons if in selection mode."""
-        self.list_widget.blockSignals(True)
-        self.list_widget.clear()
+        """Render folder items in hierarchical tree with expansion and selection icons."""
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.clear()
 
-        # Item 0: All Notes (Root)
-        all_notes_item = QListWidgetItem("All Notes")
-        all_notes_item.setData(Qt.ItemDataRole.UserRole, None)
+        # Item 0: All Notes (Pinned Root)
+        all_notes_item = QTreeWidgetItem(["All Notes"])
+        all_notes_item.setData(0, Qt.ItemDataRole.UserRole, None)
         all_notes_color = self._folder_colors.get("All Notes") or "#0a84ff"
-        all_notes_item.setIcon(create_all_notes_icon(color=all_notes_color, size=16))
-        self.list_widget.addItem(all_notes_item)
+        all_notes_item.setIcon(0, create_all_notes_icon(color=all_notes_color, size=16))
+        self.tree_widget.addTopLevelItem(all_notes_item)
 
         selected_item = all_notes_item
 
-        for folder in self._folders:
-            item = QListWidgetItem(folder.name)
-            item.setData(Qt.ItemDataRole.UserRole, folder)
+        # Map Path -> QTreeWidgetItem to parent subfolders cleanly
+        item_map: Dict[Path, QTreeWidgetItem] = {}
+
+        # Sort folders so parent directories always appear before their children
+        sorted_folders = sorted(self._folders, key=lambda p: (len(p.parts), str(p)))
+
+        for folder in sorted_folders:
+            item = QTreeWidgetItem([folder.name])
+            item.setData(0, Qt.ItemDataRole.UserRole, folder)
 
             if self._is_selection_mode:
                 if folder in self._selected_folders:
-                    item.setIcon(create_check_icon(size=14))
+                    item.setIcon(0, create_check_icon(size=14))
                 else:
-                    item.setIcon(create_uncheck_icon(size=14))
+                    item.setIcon(0, create_uncheck_icon(size=14))
             else:
                 folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
-                item.setIcon(create_folder_icon(color=folder_color, size=16))
+                item.setIcon(0, create_folder_icon(color=folder_color, size=16))
 
-            self.list_widget.addItem(item)
+            parent_path = folder.parent
+            if parent_path in item_map:
+                item_map[parent_path].addChild(item)
+                item_map[parent_path].setExpanded(True)
+            else:
+                self.tree_widget.addTopLevelItem(item)
+
+            item_map[folder] = item
+
             if current_selection is not None and folder == current_selection:
                 selected_item = item
 
         if not self._is_selection_mode:
-            self.list_widget.setCurrentItem(selected_item)
+            self.tree_widget.setCurrentItem(selected_item)
 
-        self.list_widget.blockSignals(False)
+        self.tree_widget.blockSignals(False)
 
     def _on_selection_changed(self) -> None:
         if self._is_selection_mode:
             return
-        current_item = self.list_widget.currentItem()
+        current_item = self.tree_widget.currentItem()
         if current_item is not None:
-            folder_path = current_item.data(Qt.ItemDataRole.UserRole)
+            folder_path = current_item.data(0, Qt.ItemDataRole.UserRole)
             self.folder_selected.emit(folder_path)
 
     def _on_add_folder_clicked(self) -> None:
-        folder_name, ok = ModernInputDialog.get_text(
-            self, "New Folder", "Enter folder name:"
+        # If currently a folder is selected, ask whether to create inside or at root
+        current_item = self.tree_widget.currentItem()
+        current_folder = (
+            current_item.data(0, Qt.ItemDataRole.UserRole)
+            if current_item is not None
+            else None
         )
+
+        title = "New Folder"
+        prompt = "Enter folder name:"
+        if current_folder is not None:
+            title = f"New Subfolder inside '{current_folder.name}'"
+            prompt = f"Enter subfolder name for '{current_folder.name}':"
+
+        folder_name, ok = ModernInputDialog.get_text(self, title, prompt)
         if ok and folder_name.strip():
-            self.create_folder_requested.emit(folder_name.strip())
+            self.create_folder_requested.emit(folder_name.strip(), current_folder)

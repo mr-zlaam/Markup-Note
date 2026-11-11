@@ -120,9 +120,17 @@ class MainWindow(QMainWindow):
         toggle_notes_sc = QShortcut(QKeySequence("Ctrl+Shift+\\"), self)
         toggle_notes_sc.activated.connect(self._toggle_notes_list)
 
-        # Focus Search (Ctrl+F)
+        # Focus Search (Ctrl+F) / In-note Find
         search_sc = QShortcut(QKeySequence("Ctrl+F"), self)
-        search_sc.activated.connect(self.note_list.search_bar.setFocus)
+        search_sc.activated.connect(self._on_ctrl_f)
+
+        # Global Notes List Search (Ctrl+Shift+F)
+        global_search_sc = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        global_search_sc.activated.connect(self.note_list.search_bar.setFocus)
+
+        # In-note Replace (Ctrl+H)
+        replace_sc = QShortcut(QKeySequence("Ctrl+H"), self)
+        replace_sc.activated.connect(self._on_ctrl_h)
 
         # Delete Note (Ctrl+D)
         delete_sc = QShortcut(QKeySequence("Ctrl+D"), self)
@@ -136,8 +144,23 @@ class MainWindow(QMainWindow):
         quit_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
         quit_sc.activated.connect(self.close)
 
+    def _on_ctrl_f(self) -> None:
+        """Open in-note Find bar if a note is loaded, else focus sidebar search."""
+        if self.editor._current_note is not None:
+            self.editor.open_find(replace_mode=False)
+        else:
+            self.note_list.search_bar.setFocus()
+
+    def _on_ctrl_h(self) -> None:
+        """Open in-note Find & Replace bar with Replace row expanded."""
+        if self.editor._current_note is not None:
+            self.editor.open_find(replace_mode=True)
+
     def _on_escape_pressed(self) -> None:
-        """Cancel selection mode if active in sidebar or note list."""
+        """Cancel selection mode if active in sidebar or note list, or close find bar."""
+        if hasattr(self.editor, "find_replace_bar") and self.editor.find_replace_bar.isVisible():
+            self.editor.close_find()
+            return
         if self.sidebar.is_selection_mode:
             self.sidebar.exit_selection_mode()
         elif self.note_list.is_selection_mode:

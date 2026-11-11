@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
+from ui.find_replace import FindReplaceBar
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from ui.selection_toolbar import SelectionFormatToolbar
 from ui.slash_menu import SlashCommand, SlashCommandPalette
@@ -127,6 +128,8 @@ class MarkdownEditor(QTextEdit):
     """Pure plain-text Markdown editor with cursor-aware Obsidian Live Preview."""
 
     up_at_top_requested = pyqtSignal()
+    find_requested = pyqtSignal(bool)  # is_replace_mode
+    find_close_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -201,6 +204,13 @@ class MarkdownEditor(QTextEdit):
         self.format_toolbar = SelectionFormatToolbar(self)
         self.format_toolbar.format_requested.connect(self._apply_text_format)
         self.selectionChanged.connect(self._on_selection_changed)
+
+        # In-note search & replace state
+        self._search_matches: list[tuple[int, int]] = []
+        self._current_search_idx: int = -1
+        self._search_query: str = ""
+        self._search_case: bool = False
+        self._search_word: bool = False
 
     def focusOutEvent(self, event) -> None:
         if self.slash_palette.isVisible() and not self.slash_palette.hasFocus():
@@ -396,6 +406,161 @@ class MarkdownEditor(QTextEdit):
         cursor.endEditBlock()
         self.viewport().update()
         self._show_format_toolbar()
+
+    def find_matches(
+        self, query: str, match_case: bool = False, whole_word: bool = False
+    ) -> Tuple[int, int]:
+        """Scan document for occurrences, highlight with ExtraSelection, and return (current_1_based, total)."""
+        self._search_query = query
+        self._search_case = match_case
+        self._search_word = whole_word
+
+        if not query:
+            self.clear_search()
+            return (0, 0)
+
+        text = self.document().toPlainText()
+        pattern = re.escape(query)
+        if whole_word:
+            pattern = r"\b" + pattern + r"\b"
+
+        re_flags = 0 if match_case else re.IGNORECASE
+        try:
+            compiled = re.compile(pattern, re_flags)
+        except re.error:
+            self.clear_search()
+            return (0, 0)
+
+        matches = [(m.start(), m.end()) for m in compiled.finditer(text)]
+        if not matches:
+            self._search_matches = []
+            self._current_search_idx = -1
+            self.setExtraSelections([])
+            self.viewport().update()
+            return (0, 0)
+
+        self._search_matches = matches
+
+        # Select match nearest to current cursor position
+        cursor_pos = self.textCursor().selectionStart()
+        nearest_idx = 0
+        for i, (start, end) in enumerate(matches):
+            if start <= cursor_pos <= end or start >= cursor_pos:
+                nearest_idx = i
+                break
+
+        self._current_search_idx = nearest_idx
+        self._apply_search_highlights(scroll_to_active=True)
+        return (self._current_search_idx + 1, len(matches))
+
+    def find_next(self) -> Tuple[int, int]:
+        """Jump to the next search occurrence and scroll it into view."""
+        if not self._search_matches:
+            return (0, 0)
+        self._current_search_idx = (self._current_search_idx + 1) % len(self._search_matches)
+        self._apply_search_highlights(scroll_to_active=True)
+        return (self._current_search_idx + 1, len(self._search_matches))
+
+    def find_prev(self) -> Tuple[int, int]:
+        """Jump to the previous search occurrence and scroll it into view."""
+        if not self._search_matches:
+            return (0, 0)
+        self._current_search_idx = (self._current_search_idx - 1) % len(self._search_matches)
+        self._apply_search_highlights(scroll_to_active=True)
+        return (self._current_search_idx + 1, len(self._search_matches))
+
+    def replace_current(self, replacement: str) -> Tuple[int, int]:
+        """Replace the active match and advance to the next match."""
+        if not self._search_matches or self._current_search_idx < 0:
+            return (0, 0)
+
+        start, end = self._search_matches[self._current_search_idx]
+        cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertText(replacement)
+        cursor.endEditBlock()
+
+        # Place cursor right after the newly inserted replacement
+        new_c = self.textCursor()
+        new_c.setPosition(start + len(replacement))
+        self.setTextCursor(new_c)
+
+        return self.find_matches(self._search_query, self._search_case, self._search_word)
+
+    def replace_all(
+        self, query: str, replacement: str, match_case: bool = False, whole_word: bool = False
+    ) -> int:
+        """Atomically replace all matches in the document in a single undo block."""
+        if not query:
+            return 0
+
+        text = self.document().toPlainText()
+        pattern = re.escape(query)
+        if whole_word:
+            pattern = r"\b" + pattern + r"\b"
+
+        re_flags = 0 if match_case else re.IGNORECASE
+        try:
+            compiled = re.compile(pattern, re_flags)
+        except re.error:
+            return 0
+
+        matches = [(m.start(), m.end()) for m in compiled.finditer(text)]
+        if not matches:
+            return 0
+
+        cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()
+        for start, end in reversed(matches):
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(replacement)
+        cursor.endEditBlock()
+
+        self.clear_search()
+        self.viewport().update()
+        return len(matches)
+
+    def clear_search(self) -> None:
+        """Clear all search highlights, matches, and state."""
+        self._search_matches = []
+        self._current_search_idx = -1
+        self._search_query = ""
+        self.setExtraSelections([])
+        self.viewport().update()
+
+    def _apply_search_highlights(self, scroll_to_active: bool = True) -> None:
+        """Apply visual highlights for all search matches via QTextEdit.ExtraSelection."""
+        if not self._search_matches:
+            self.setExtraSelections([])
+            return
+
+        selections = []
+        doc = self.document()
+
+        for i, (start, end) in enumerate(self._search_matches):
+            sel = QTextEdit.ExtraSelection()
+            c = QTextCursor(doc)
+            c.setPosition(start)
+            c.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            sel.cursor = c
+
+            if i == self._current_search_idx:
+                sel.format.setBackground(QColor("#0a84ff"))
+                sel.format.setForeground(QColor("#ffffff"))
+                if scroll_to_active:
+                    self.setTextCursor(c)
+                    self.ensureCursorVisible()
+            else:
+                sel.format.setBackground(QColor(235, 175, 40, 95))
+                sel.format.setForeground(QColor("#ffffff"))
+
+            selections.append(sel)
+
+        self.setExtraSelections(selections)
+        self.viewport().update()
 
     def _show_slash_palette(self) -> None:
         """Position and display the floating slash palette directly beneath the cursor."""
@@ -1539,6 +1704,15 @@ class MarkdownEditor(QTextEdit):
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
 
+        # In-note Find (Ctrl+F) and Replace (Ctrl+H)
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_F:
+                self.find_requested.emit(False)
+                return
+            elif event.key() == Qt.Key.Key_H:
+                self.find_requested.emit(True)
+                return
+
         # Up arrow at the very top of document: jump up to NoteTitleEdit
         if event.key() == Qt.Key.Key_Up:
             if block.blockNumber() == 0 and pos_in_block == 0 and not (event.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)):
@@ -1561,8 +1735,17 @@ class MarkdownEditor(QTextEdit):
                 self._show_slash_palette()
                 return
 
-        # Escape key: exit active card editing mode and re-collapse back into rendered card
+        # Escape key: dismiss active find bar, popups, or exit active card editing mode
         if event.key() == Qt.Key.Key_Escape:
+            if self.format_toolbar.isVisible():
+                self.format_toolbar.hide()
+                return
+            if self.slash_palette.isVisible():
+                self.slash_palette.hide()
+                return
+            if self._search_matches:
+                self.find_close_requested.emit()
+                return
             b_num = block.blockNumber()
             for r_list in (
                 self.highlighter.code_regions,
@@ -1958,7 +2141,76 @@ class EditorPanel(QWidget):
         self.editor = MarkdownEditor(parent=self)
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.up_at_top_requested.connect(self._on_up_at_top)
+
+        # In-note Find & Replace Bar
+        self.find_replace_bar = FindReplaceBar(parent=self)
+        self.find_replace_bar.find_changed.connect(self._on_find_changed)
+        self.find_replace_bar.find_next_requested.connect(self._on_find_next)
+        self.find_replace_bar.find_prev_requested.connect(self._on_find_prev)
+        self.find_replace_bar.replace_current_requested.connect(self._on_replace_current)
+        self.find_replace_bar.replace_all_requested.connect(self._on_replace_all)
+        self.find_replace_bar.closed.connect(self.close_find)
+
+        self.editor.find_requested.connect(self.open_find)
+        self.editor.find_close_requested.connect(self.close_find)
+
+        find_container = QHBoxLayout()
+        find_container.setContentsMargins(0, 0, 0, 2)
+        find_container.addStretch()
+        find_container.addWidget(self.find_replace_bar)
+        self.find_replace_bar.setVisible(False)
+        layout.addLayout(find_container)
+
         layout.addWidget(self.editor)
+
+    def open_find(self, replace_mode: bool = False) -> None:
+        """Display Find & Replace bar and prefill with current selection if any."""
+        cursor = self.editor.textCursor()
+        had_text_change = False
+        if cursor.hasSelection():
+            sel_text = cursor.selectedText()
+            if sel_text and "\u2029" not in sel_text and "\n" not in sel_text:
+                if self.find_replace_bar.find_input.text() != sel_text:
+                    had_text_change = True
+                    self.find_replace_bar.find_input.setText(sel_text)
+
+        self.find_replace_bar.set_replace_visible(replace_mode)
+        self.find_replace_bar.show()
+        if replace_mode and self.find_replace_bar.find_input.text().strip():
+            self.find_replace_bar.focus_replace()
+        else:
+            self.find_replace_bar.focus_find()
+
+        if not had_text_change:
+            self.find_replace_bar.retrigger_search()
+
+    def close_find(self) -> None:
+        """Hide Find & Replace bar, clear document highlights, and return focus to editor."""
+        self.find_replace_bar.hide()
+        self.editor.clear_search()
+        self.editor.setFocus()
+
+    def _on_find_changed(self, query: str, match_case: bool, whole_word: bool) -> None:
+        curr, total = self.editor.find_matches(query, match_case, whole_word)
+        self.find_replace_bar.set_match_status(curr, total)
+
+    def _on_find_next(self) -> None:
+        curr, total = self.editor.find_next()
+        self.find_replace_bar.set_match_status(curr, total)
+
+    def _on_find_prev(self) -> None:
+        curr, total = self.editor.find_prev()
+        self.find_replace_bar.set_match_status(curr, total)
+
+    def _on_replace_current(self, replacement: str) -> None:
+        curr, total = self.editor.replace_current(replacement)
+        self.find_replace_bar.set_match_status(curr, total)
+
+    def _on_replace_all(
+        self, query: str, replacement: str, match_case: bool, whole_word: bool
+    ) -> None:
+        self.editor.replace_all(query, replacement, match_case, whole_word)
+        self.find_replace_bar.set_match_status(0, 0)
 
     def _on_title_enter_or_down(self) -> None:
         """Move cursor from title edit into the start of the markdown editor body."""
@@ -2036,6 +2288,11 @@ class EditorPanel(QWidget):
         self.update_meta(note)
         self._update_word_count()
 
+        if hasattr(self, "find_replace_bar") and self.find_replace_bar.isVisible() and self.find_replace_bar.find_input.text():
+            self.find_replace_bar.retrigger_search()
+        else:
+            self.editor.clear_search()
+
     def update_meta(self, note: Note) -> None:
         """Update only the metadata header without reloading the editor document."""
         self._current_note = note
@@ -2057,6 +2314,8 @@ class EditorPanel(QWidget):
     def _on_text_changed(self) -> None:
         self._update_word_count()
         self._save_timer.start()
+        if hasattr(self, "find_replace_bar") and self.find_replace_bar.isVisible() and self.find_replace_bar.find_input.text():
+            self.find_replace_bar.retrigger_search()
 
     def _update_word_count(self) -> None:
         words = len(self.editor.toPlainText().split())

@@ -185,6 +185,17 @@ QMenu::separator {
     background-color: #383840;
     margin: 4px 6px;
 }
+
+/* Modern Dark Tooltips */
+QToolTip {
+    background-color: #202024;
+    color: #e2e2e6;
+    border: 1px solid #36363c;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 11px;
+    font-weight: 500;
+}
 """
 
 

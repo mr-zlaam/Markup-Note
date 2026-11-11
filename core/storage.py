@@ -148,6 +148,55 @@ class StorageManager:
         except (PermissionError, OSError):
             return False
 
+    def rename_folder(self, folder_path: Path, new_name: str) -> Optional[Path]:
+        """Rename a subfolder under root_dir."""
+        safe_name = self.sanitize_filename(new_name)
+        if not safe_name:
+            return None
+        target_path = self.root_dir / safe_name
+        if target_path == folder_path:
+            return folder_path
+        if target_path.exists():
+            return None
+        try:
+            folder_path.rename(target_path)
+            return target_path
+        except (PermissionError, OSError):
+            return None
+
+    def delete_folder(self, folder_path: Path) -> bool:
+        """Delete a folder and all its contents by moving it to the .trash folder."""
+        if not folder_path.exists() or not folder_path.is_dir() or folder_path == self.root_dir:
+            return False
+        trash_dir = self.root_dir / ".trash"
+        try:
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            trash_target = trash_dir / folder_path.name
+            counter = 1
+            while trash_target.exists():
+                trash_target = trash_dir / f"{folder_path.name}_{counter}"
+                counter += 1
+            folder_path.rename(trash_target)
+            return True
+        except (PermissionError, OSError):
+            return False
+
+    def delete_notes_batch(self, paths: List[Path]) -> int:
+        """Delete multiple notes in batch, moving each to .trash. Returns count of deleted notes."""
+        deleted_count = 0
+        for path in paths:
+            if self.delete_note(path):
+                deleted_count += 1
+        return deleted_count
+
+    def delete_folders_batch(self, paths: List[Path]) -> int:
+        """Delete multiple folders in batch, moving each to .trash. Returns count of deleted folders."""
+        deleted_count = 0
+        for path in paths:
+            if self.delete_folder(path):
+                deleted_count += 1
+        return deleted_count
+
     @staticmethod
     def sanitize_filename(name: str) -> str:
         """Remove invalid filesystem characters from a string."""

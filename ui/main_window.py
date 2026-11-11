@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 from core.config import ConfigManager
 from core.note import Note
 from core.storage import StorageManager
-from ui.dialogs import ModernConfirmDialog
+from ui.dialogs import ModernConfirmDialog, ModernInputDialog
 from ui.editor import EditorPanel
 from ui.note_list import NoteListPanel
 from ui.sidebar import FolderSidebar
@@ -60,6 +60,10 @@ class MainWindow(QMainWindow):
         self.sidebar.folder_selected.connect(self._on_folder_selected)
         self.sidebar.create_folder_requested.connect(self._on_create_folder)
         self.sidebar.collapse_requested.connect(self._toggle_sidebar)
+        self.sidebar.rename_folder_requested.connect(self._on_rename_folder)
+        self.sidebar.delete_folder_requested.connect(self._on_delete_folder)
+        self.sidebar.delete_folders_batch_requested.connect(self._on_delete_folders_batch)
+        self.sidebar.select_all_notes_requested.connect(self._on_select_all_notes_requested)
 
         # 2. Middle: Note Cards List
         self.note_list = NoteListPanel(parent=self.splitter)
@@ -68,6 +72,9 @@ class MainWindow(QMainWindow):
         self.note_list.search_query_changed.connect(self._on_search_filter)
         self.note_list.toggle_folders_requested.connect(self._toggle_sidebar)
         self.note_list.collapse_notes_requested.connect(self._toggle_notes_list)
+        self.note_list.rename_note_requested.connect(self._on_rename_note)
+        self.note_list.delete_note_requested.connect(self._on_delete_single_note)
+        self.note_list.delete_notes_batch_requested.connect(self._on_delete_notes_batch)
 
         # 3. Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
@@ -261,6 +268,141 @@ class MainWindow(QMainWindow):
             self.storage.delete_note(self._current_note.path)
             self._current_note = None
             self._refresh_notes()
+
+    def _on_rename_folder(self, folder_path: Path) -> None:
+        """Rename an existing folder."""
+        new_name, ok = ModernInputDialog.get_text(
+            self,
+            title="Rename Folder",
+            prompt="Enter new folder name:",
+            default=folder_path.name,
+            confirm_text="Rename",
+        )
+        if ok and new_name and new_name != folder_path.name:
+            renamed_folder = self.storage.rename_folder(folder_path, new_name)
+            if renamed_folder is not None:
+                if self._current_folder == folder_path:
+                    self._current_folder = renamed_folder
+                self._update_watcher_paths()
+                self.sidebar.set_folders(self.storage.get_folders(), current_selection=self._current_folder)
+                self._refresh_notes()
+
+    def _on_delete_folder(self, folder_path: Path) -> None:
+        """Delete an existing folder and all notes inside it."""
+        notes = self.storage.list_notes(folder_path)
+        count = len(notes)
+        msg = (
+            f"Are you sure you want to delete folder '{folder_path.name}' and all {count} notes inside it? They will be moved to Trash."
+            if count > 0
+            else f"Are you sure you want to delete folder '{folder_path.name}'?"
+        )
+        confirmed = ModernConfirmDialog.ask(
+            self,
+            title="Delete Folder",
+            message=msg,
+            confirm_text="Delete",
+            is_destructive=True,
+        )
+        if confirmed:
+            self.storage.delete_folder(folder_path)
+            if self._current_folder == folder_path:
+                self._current_folder = None
+            self._update_watcher_paths()
+            self.sidebar.set_folders(self.storage.get_folders(), current_selection=self._current_folder)
+            self._refresh_notes()
+
+    def _on_delete_folders_batch(self, folders: List[Path]) -> None:
+        """Delete multiple selected folders in batch."""
+        count = len(folders)
+        if count == 0:
+            return
+        msg = f"Are you sure you want to delete {count} selected folders and all notes inside them? They will be moved to Trash."
+        confirmed = ModernConfirmDialog.ask(
+            self,
+            title=f"Delete {count} Folders",
+            message=msg,
+            confirm_text="Delete",
+            is_destructive=True,
+        )
+        if confirmed:
+            self.storage.delete_folders_batch(folders)
+            if self._current_folder in folders:
+                self._current_folder = None
+            self._update_watcher_paths()
+            self.sidebar.exit_selection_mode()
+            self.sidebar.set_folders(self.storage.get_folders(), current_selection=self._current_folder)
+            self._refresh_notes()
+
+    def _on_rename_note(self, note: Note) -> None:
+        """Rename a note from right-click context menu."""
+        new_title, ok = ModernInputDialog.get_text(
+            self,
+            title="Rename Note",
+            prompt="Enter new note title:",
+            default=note.title,
+            confirm_text="Rename",
+        )
+        if ok and new_title and new_title != note.title:
+            self._is_saving_internally = True
+            content = note.content
+            lines = content.split("\n")
+            if lines and lines[0].startswith("# "):
+                lines[0] = f"# {new_title}"
+                content = "\n".join(lines)
+
+            renamed_path = self.storage.rename_note_file(note.path, new_title)
+            self.storage.save_note_content(renamed_path, content)
+
+            updated_note = Note.from_file(renamed_path)
+            if updated_note is not None:
+                if self._current_note and self._current_note.path == note.path:
+                    self._current_note = updated_note
+                    self.editor.load_note(updated_note)
+                self.note_list.update_note_card(str(note.path), updated_note)
+                self._refresh_notes(preserve_path=str(renamed_path), emit_selection=False)
+
+            QTimer.singleShot(500, self._clear_saving_flag)
+
+    def _on_delete_single_note(self, note: Note) -> None:
+        """Delete a single note from right-click context menu."""
+        confirmed = ModernConfirmDialog.ask(
+            self,
+            title="Delete Note",
+            message=f"Are you sure you want to delete '{note.title}'?",
+            confirm_text="Delete",
+            is_destructive=True,
+        )
+        if confirmed:
+            self.storage.delete_note(note.path)
+            if self._current_note and self._current_note.path == note.path:
+                self._current_note = None
+                self.editor.load_note(None)
+            self._refresh_notes()
+
+    def _on_delete_notes_batch(self, notes: List[Note]) -> None:
+        """Delete multiple notes in one batch from selection mode."""
+        count = len(notes)
+        if count == 0:
+            return
+        confirmed = ModernConfirmDialog.ask(
+            self,
+            title=f"Delete {count} Notes",
+            message=f"Are you sure you want to delete {count} selected notes? They will be moved to Trash.",
+            confirm_text="Delete",
+            is_destructive=True,
+        )
+        if confirmed:
+            paths = [n.path for n in notes]
+            self.storage.delete_notes_batch(paths)
+            if self._current_note and self._current_note.path in paths:
+                self._current_note = None
+                self.editor.load_note(None)
+            self.note_list.exit_selection_mode()
+            self._refresh_notes()
+
+    def _on_select_all_notes_requested(self) -> None:
+        """Enter selection mode on notes list from sidebar All Notes right-click."""
+        self.note_list.enter_selection_mode()
 
     def _on_search_filter(self, query: str) -> None:
         if not query:

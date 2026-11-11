@@ -1511,14 +1511,8 @@ class EditorPanel(QWidget):
         header.addStretch()
 
         self.word_count_label = QLabel("0 words", parent=self)
-        self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 6px;")
+        self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 12px;")
         header.addWidget(self.word_count_label)
-
-        self.delete_btn = QPushButton("Delete", parent=self)
-        self.delete_btn.setObjectName("ActionBtn")
-        self.delete_btn.setToolTip("Delete note (Ctrl+D)")
-        self.delete_btn.clicked.connect(self.delete_requested.emit)
-        header.addWidget(self.delete_btn)
 
         layout.addLayout(header)
 

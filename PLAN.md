@@ -57,7 +57,14 @@
     * When Notes collapses: Editor reveals `[ | ]` at its top-left header.
   * **Smooth Slide Animation (`QVariantAnimation`):** Smooth 220ms sliding animation with cubic easing (`OutCubic`), zero-flicker handoffs, and instant reversal safety.
   * **Restart Persistence:** Saves and restores collapsed states via `~/.config/note-taker/settings.json`.
-* 🟢 **`[Completed]`** **Native High-DPI Vector Icons (`utils/icons.py`):**
+* 🟢 **`[Completed]`** **Right-Click Context Menus & Batch Selection (`ui/sidebar.py`, `ui/note_list.py`):**
+  * **Folders Right-Click Menu:** Sleek macOS-styled dark menu with Rename, Select, and Delete options.
+  * **Notes Right-Click Menu:** Rename Note, Select, and Delete Note options.
+  * **Batch Selection Mode:** Selecting "Select" activates batch mode with circular checkmarks (`✓` / `○`) next to each note card. Includes a dedicated batch bar with `Select All` / `Deselect All`, `Delete (X)`, and `Done` buttons, allowing users to delete notes in one go.
+  * **Folder Management & Batch Deletion:** Renames folders and notes safely on disk with live file watcher updates; batch deletes selected folders and notes to `.trash`.
+* 🟢 **`[Completed]`** **Clean Editor Header & Premium Dialog Redesign (`ui/editor.py`, `ui/dialogs.py`):**
+  * Removed the top-right "Delete" button from the editor header for a cleaner, distraction-free writing environment.
+  * Completely redesigned `ModernConfirmDialog` and `ModernInputDialog` to eliminate background banding/black lines on labels, expanded to a spacious 420px width with 12px rounded borders and sleek button styles.
   * Embedded magnifying glass search icon inside `QLineEdit` search input.
   * Clean vector `+` icons for "New Folder" and "New Note" buttons with rounded terminal caps.
   * Modern panel toggle icons for sidebar and notes list (`[| ]` and `[ | ]`).

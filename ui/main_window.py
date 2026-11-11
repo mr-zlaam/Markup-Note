@@ -1,11 +1,11 @@
 """Main application window with 3-column collapsible splitter layout."""
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from PyQt6.QtCore import QEasingCurve, QFileSystemWatcher, QTimer, QVariantAnimation, Qt
 from PyQt6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
-from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QSplitter, QWidget
 
 from core.config import ConfigManager
 from core.note import Note
@@ -14,6 +14,7 @@ from ui.dialogs import ModernConfirmDialog, ModernInputDialog, ModernMessageDial
 from ui.editor import EditorPanel
 from ui.note_list import NoteListPanel
 from ui.sidebar import FolderSidebar
+from utils.file_validator import validate_markdown_file
 
 
 class MainWindow(QMainWindow):
@@ -23,9 +24,11 @@ class MainWindow(QMainWindow):
         self,
         storage_manager: Optional[StorageManager] = None,
         config_manager: Optional[ConfigManager] = None,
+        initial_path: Optional[Path] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent=parent)
+        self._initial_path = initial_path
         self.setWindowTitle("Markup Notes")
 
         app_icon = QIcon()
@@ -117,6 +120,14 @@ class MainWindow(QMainWindow):
         # New Note (Ctrl+N)
         new_note_sc = QShortcut(QKeySequence("Ctrl+N"), self)
         new_note_sc.activated.connect(self._on_create_note)
+
+        # Open Markdown File (Ctrl+O)
+        open_file_sc = QShortcut(QKeySequence("Ctrl+O"), self)
+        open_file_sc.activated.connect(self._on_open_file_dialog)
+
+        # Open Notes Folder (Ctrl+Shift+O)
+        open_folder_sc = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
+        open_folder_sc.activated.connect(self._on_open_folder_dialog)
 
         # New Folder (Ctrl+Shift+N)
         new_folder_sc = QShortcut(QKeySequence("Ctrl+Shift+N"), self)
@@ -213,11 +224,94 @@ class MainWindow(QMainWindow):
         self._update_watcher_paths()
         self._refresh_notes()
 
+        # If an initial file or directory was requested (CLI or file manager), open it
+        if self._initial_path is not None:
+            self.open_file_or_folder(self._initial_path)
+            return
+
         # If no notes exist on launch, auto-create one so user can type immediately
         if not self._all_current_notes:
             self._on_create_note()
         elif self._current_note is not None:
             self.editor.editor.setFocus()
+
+    def open_file_or_folder(self, target: Union[str, Path]) -> bool:
+        """Open a Markdown file in the editor or a folder as the active workspace.
+
+        Validates that files are genuine Markdown/text documents and rejects binary/unsupported formats.
+        """
+        path = Path(target).resolve()
+        is_valid, err_title, err_msg = validate_markdown_file(path)
+        if not is_valid:
+            QMessageBox.warning(self, err_title or "Error", err_msg or f"Cannot open '{path.name}'.")
+            return False
+
+        # Case 1: Target is a directory -> open directory as notes root
+        if path.is_dir():
+            self.storage.root_dir = path
+            folders = self.storage.get_folders()
+            self.sidebar.set_folders(folders)
+            self._current_folder = None
+            self._update_watcher_paths()
+            self._refresh_notes()
+            self.setWindowTitle(f"{path.name} — Markup Notes")
+            return True
+
+        # Case 2: Target is a Markdown / text file
+        # Check if it is inside the current storage root
+        try:
+            rel = path.relative_to(self.storage.root_dir)
+            parent_folder = path.parent if path.parent != self.storage.root_dir else None
+            self._current_folder = parent_folder
+            self._refresh_notes(preserve_path=str(path), emit_selection=True)
+            self.setWindowTitle(f"{path.stem} — Markup Notes")
+            return True
+        except ValueError:
+            # External file outside the default notes directory
+            note = Note.from_file(path)
+            if note is None:
+                QMessageBox.warning(self, "Read Error", f"Unable to read content from '{path.name}'.")
+                return False
+
+            self._current_note = note
+            self.editor.load_note(note)
+            self.setWindowTitle(f"{path.name} — Markup Notes")
+            return True
+
+    def _on_open_file_dialog(self) -> None:
+        """Open native XDG Desktop Portal file dialog to select and load a Markdown file."""
+        from PyQt6.QtWidgets import QFileDialog
+
+        start_dir = (
+            str(self.storage.root_dir)
+            if self.storage.root_dir.exists()
+            else str(Path.home())
+        )
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Markdown File",
+            start_dir,
+            "Markdown Files (*.md *.markdown *.mdown *.mkd *.txt);;All Files (*)",
+        )
+        if file_path:
+            self.open_file_or_folder(Path(file_path))
+
+    def _on_open_folder_dialog(self) -> None:
+        """Open native XDG Desktop Portal dialog to select a folder as workspace."""
+        from PyQt6.QtWidgets import QFileDialog
+
+        start_dir = (
+            str(self.storage.root_dir)
+            if self.storage.root_dir.exists()
+            else str(Path.home())
+        )
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Open Notes Folder",
+            start_dir,
+        )
+        if folder_path:
+            self.open_file_or_folder(Path(folder_path))
 
     def _update_watcher_paths(self) -> None:
         """Update watched directories for external modifications."""

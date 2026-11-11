@@ -58,7 +58,14 @@ def main() -> None:
     # Apply modern Apple Notes dark theme
     apply_theme(app)
 
-    window = MainWindow()
+    # Inspect CLI arguments for passed files or directories (Exec=markup-notes %F)
+    initial_path: Optional[Path] = None
+    if len(sys.argv) > 1:
+        raw_arg = sys.argv[1].strip()
+        if raw_arg and not raw_arg.startswith("-"):
+            initial_path = Path(raw_arg).resolve()
+
+    window = MainWindow(initial_path=initial_path)
     window.show()
 
     def _handle_sigint(signum: int, frame: Optional[FrameType]) -> None:

@@ -507,3 +507,74 @@ def create_markdown_icon(
 
     painter.end()
     return QIcon(pixmap)
+
+
+def draw_checkbox_badge(
+    painter: QPainter,
+    badge_rect: QRect,
+    color: str = "#0a84ff",
+    box_color: str = "#8e8e93",
+) -> None:
+    """Draw a crisp vector checkbox icon with checkmark centered in badge_rect."""
+    cx = float(badge_rect.center().x())
+    cy = float(badge_rect.center().y())
+    box_size = 15.0
+    half = box_size / 2.0
+    box_rect = QRectF(cx - half, cy - half, box_size, box_size)
+
+    # Rounded box
+    box_pen = QPen(QColor(box_color), 1.4)
+    painter.setPen(box_pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(box_rect, 3.5, 3.5)
+
+    # Checkmark inside
+    check_pen = QPen(QColor(color), 1.5)
+    check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(check_pen)
+
+    path = QPainterPath()
+    path.moveTo(cx - 3.8, cy + 0.3)
+    path.lineTo(cx - 1.0, cy + 3.1)
+    path.lineTo(cx + 4.2, cy - 2.7)
+    painter.drawPath(path)
+
+
+def create_checkbox_icon(
+    color: str = "#0a84ff",
+    box_color: str = "#8e8e93",
+    size: int = 16,
+) -> QIcon:
+    """Generate a crisp square checkbox icon with checkmark."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    margin = 1.0
+    box_size = float(size) - (margin * 2.0)
+    box_rect = QRectF(margin, margin, box_size, box_size)
+
+    box_pen = QPen(QColor(box_color), 1.4)
+    painter.setPen(box_pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(box_rect, 3.5, 3.5)
+
+    cx = float(size) / 2.0
+    cy = float(size) / 2.0
+    check_pen = QPen(QColor(color), 1.5)
+    check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(check_pen)
+
+    path = QPainterPath()
+    path.moveTo(cx - 3.8, cy + 0.3)
+    path.lineTo(cx - 1.0, cy + 3.1)
+    path.lineTo(cx + 4.2, cy - 2.7)
+    painter.drawPath(path)
+
+    painter.end()
+    return QIcon(pixmap)

@@ -74,8 +74,9 @@ def run_tests():
         assert editor.slash_palette.isVisible(), "Slash palette should still be visible while filtering"
         current_cmd = editor.slash_palette.list_widget.currentItem().data(Qt.ItemDataRole.UserRole)
         assert current_cmd is not None
-        assert current_cmd.id == "todo", f"Expected 'todo' command selected, got {current_cmd.id}"
-        print("Filter query: PASS ('todo' selected for '/checkbox')")
+        assert current_cmd.id == "checkbox", f"Expected 'checkbox' command selected, got {current_cmd.id}"
+        assert current_cmd.title == "Checkbox", f"Expected title 'Checkbox', got {current_cmd.title}"
+        print("Filter query: PASS ('checkbox' selected for '/checkbox')")
 
         # 3. Test pressing Enter executes command and replaces '/checkbox' with '- [ ] '
         print("Testing Enter execution...")

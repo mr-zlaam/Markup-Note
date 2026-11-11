@@ -17,6 +17,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.icons import draw_checkbox_badge
+
 
 @dataclass
 class SlashCommand:
@@ -32,12 +34,12 @@ class SlashCommand:
 
 COMMANDS: List[SlashCommand] = [
     SlashCommand(
-        id="todo",
-        title="To-do list",
-        description="Track tasks with a to-do list",
+        id="checkbox",
+        title="Checkbox",
+        description="Track tasks with a clickable checkbox",
         icon="[ ]",
         prefix="- [ ] ",
-        keywords=("todo", "checkbox", "check", "task", "box"),
+        keywords=("checkbox", "check", "todo", "task", "box"),
     ),
     SlashCommand(
         id="bullet",
@@ -88,14 +90,6 @@ COMMANDS: List[SlashCommand] = [
         keywords=("quote", "blockquote", "callout", "cite"),
     ),
     SlashCommand(
-        id="code",
-        title="Code block",
-        description="Code snippet with syntax highlight",
-        icon="</>",
-        prefix="```\n\n```",
-        keywords=("code", "codeblock", "snippet", "syntax", "pre"),
-    ),
-    SlashCommand(
         id="divider",
         title="Divider",
         description="Visually divide blocks with a horizontal line",
@@ -136,12 +130,20 @@ class SlashItemDelegate(QStyledItemDelegate):
         painter.drawRoundedRect(badge_rect, 6, 6)
 
         # Icon text / symbol
-        icon_font = QFont(option.font)
-        icon_font.setPointSize(10)
-        icon_font.setBold(True)
-        painter.setFont(icon_font)
-        painter.setPen(QColor("#0a84ff" if is_selected else "#c8c8cc"))
-        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, cmd.icon)
+        if cmd.id == "checkbox":
+            draw_checkbox_badge(
+                painter,
+                badge_rect,
+                color="#0a84ff" if is_selected else "#0a84ff",
+                box_color="#0a84ff" if is_selected else "#8e8e93",
+            )
+        else:
+            icon_font = QFont(option.font)
+            icon_font.setPointSize(10)
+            icon_font.setBold(True)
+            painter.setFont(icon_font)
+            painter.setPen(QColor("#0a84ff" if is_selected else "#c8c8cc"))
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, cmd.icon)
 
         # Title
         title_font = QFont(option.font)

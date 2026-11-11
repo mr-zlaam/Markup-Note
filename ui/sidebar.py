@@ -21,7 +21,6 @@ from ui.dialogs import ModernInputDialog
 from utils.icons import (
     create_check_icon,
     create_close_icon,
-    create_done_icon,
     create_plus_icon,
     create_sidebar_toggle_icon,
     create_trash_icon,
@@ -140,15 +139,6 @@ class FolderSidebar(QWidget):
         self.batch_delete_btn.setEnabled(False)
         self.batch_delete_btn.clicked.connect(self._on_batch_delete_clicked)
         batch_layout.addWidget(self.batch_delete_btn)
-
-        # Vector checkmark icon button for done
-        self.done_btn = QPushButton(parent=batch_header_widget)
-        self.done_btn.setObjectName("IconButton")
-        self.done_btn.setIcon(create_done_icon("#0a84ff", size=15))
-        self.done_btn.setFixedSize(24, 24)
-        self.done_btn.setToolTip("Done selecting")
-        self.done_btn.clicked.connect(self.exit_selection_mode)
-        batch_layout.addWidget(self.done_btn)
 
         # Vector close/cross icon button for cancel
         self.cancel_btn = QPushButton(parent=batch_header_widget)

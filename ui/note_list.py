@@ -25,7 +25,6 @@ from core.note import Note
 from utils.icons import (
     create_check_icon,
     create_close_icon,
-    create_done_icon,
     create_notes_toggle_icon,
     create_plus_icon,
     create_search_icon,
@@ -269,15 +268,6 @@ class NoteListPanel(QWidget):
         self.batch_delete_btn.setEnabled(False)
         self.batch_delete_btn.clicked.connect(self._on_batch_delete_clicked)
         batch_layout.addWidget(self.batch_delete_btn)
-
-        # Vector checkmark icon button for done (no text)
-        self.done_btn = QPushButton(parent=batch_bar_widget)
-        self.done_btn.setObjectName("IconButton")
-        self.done_btn.setIcon(create_done_icon("#0a84ff", size=16))
-        self.done_btn.setFixedSize(28, 28)
-        self.done_btn.setToolTip("Done selecting")
-        self.done_btn.clicked.connect(self.exit_selection_mode)
-        batch_layout.addWidget(self.done_btn)
 
         # Vector cross icon button for cancel (no text)
         self.cancel_btn = QPushButton(parent=batch_bar_widget)

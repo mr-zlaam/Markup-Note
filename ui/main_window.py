@@ -121,9 +121,20 @@ class MainWindow(QMainWindow):
         delete_sc = QShortcut(QKeySequence("Ctrl+D"), self)
         delete_sc.activated.connect(self._on_delete_note)
 
+        # Cancel Selection / Escape (Esc)
+        esc_sc = QShortcut(QKeySequence("Esc"), self)
+        esc_sc.activated.connect(self._on_escape_pressed)
+
         # Quit Application (Ctrl+Q)
         quit_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
         quit_sc.activated.connect(self.close)
+
+    def _on_escape_pressed(self) -> None:
+        """Cancel selection mode if active in sidebar or note list."""
+        if self.sidebar.is_selection_mode:
+            self.sidebar.exit_selection_mode()
+        elif self.note_list.is_selection_mode:
+            self.note_list.exit_selection_mode()
 
     def _load_initial_data(self) -> None:
         """Load folders and notes on launch."""

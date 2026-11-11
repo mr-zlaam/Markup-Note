@@ -316,3 +316,28 @@ def create_done_icon(
 
     painter.end()
     return QIcon(pixmap)
+
+
+def create_close_icon(
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.6,
+) -> QIcon:
+    """Generate a clean vector X (cross) icon for canceling/closing."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+
+    inset = 4.5
+    painter.drawLine(QPointF(inset, inset), QPointF(float(size) - inset, float(size) - inset))
+    painter.drawLine(QPointF(float(size) - inset, inset), QPointF(inset, float(size) - inset))
+
+    painter.end()
+    return QIcon(pixmap)

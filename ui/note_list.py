@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 from core.note import Note
 from utils.icons import (
     create_check_icon,
+    create_close_icon,
     create_done_icon,
     create_notes_toggle_icon,
     create_plus_icon,
@@ -278,6 +279,15 @@ class NoteListPanel(QWidget):
         self.done_btn.clicked.connect(self.exit_selection_mode)
         batch_layout.addWidget(self.done_btn)
 
+        # Vector cross icon button for cancel (no text)
+        self.cancel_btn = QPushButton(parent=batch_bar_widget)
+        self.cancel_btn.setObjectName("IconButton")
+        self.cancel_btn.setIcon(create_close_icon("#8e8e93", size=15))
+        self.cancel_btn.setFixedSize(28, 28)
+        self.cancel_btn.setToolTip("Cancel selection (Esc)")
+        self.cancel_btn.clicked.connect(self.exit_selection_mode)
+        batch_layout.addWidget(self.cancel_btn)
+
         self.header_stack.addWidget(batch_bar_widget)
         layout.addWidget(self.header_stack, 0)
 
@@ -354,6 +364,14 @@ class NoteListPanel(QWidget):
             note = item.data(Qt.ItemDataRole.UserRole)
             if note is not None:
                 self.toggle_note_selection(str(note.path))
+
+    def keyPressEvent(self, event) -> None:
+        """Handle Escape key to cancel selection mode."""
+        if self._is_selection_mode and event.key() == Qt.Key.Key_Escape:
+            self.exit_selection_mode()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _on_context_menu(self, pos: QPoint) -> None:
         """Display sleek context menu for note card."""

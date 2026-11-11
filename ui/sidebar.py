@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from ui.dialogs import ModernInputDialog
 from utils.icons import (
     create_check_icon,
+    create_close_icon,
     create_done_icon,
     create_plus_icon,
     create_sidebar_toggle_icon,
@@ -101,12 +102,32 @@ class FolderSidebar(QWidget):
         # 2. Batch Header for Folders
         batch_header_widget = QWidget(parent=self.header_stack)
         batch_layout = QHBoxLayout(batch_header_widget)
-        batch_layout.setContentsMargins(10, 2, 6, 2)
-        batch_layout.setSpacing(6)
+        batch_layout.setContentsMargins(6, 2, 4, 2)
+        batch_layout.setSpacing(4)
 
         self.select_count_label = QLabel("0 selected", parent=batch_header_widget)
         self.select_count_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #a8a8b0;")
         batch_layout.addWidget(self.select_count_label)
+
+        self.select_all_btn = QPushButton("Select All", parent=batch_header_widget)
+        self.select_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2c2c30;
+                color: #e0e0e0;
+                font-size: 10px;
+                font-weight: 500;
+                border: 1px solid #3c3c44;
+                border-radius: 4px;
+                padding: 2px 5px;
+            }
+            QPushButton:hover {
+                background-color: #383840;
+                color: #ffffff;
+            }
+        """)
+        self.select_all_btn.setToolTip("Select or deselect all folders")
+        self.select_all_btn.clicked.connect(self._on_toggle_select_all)
+        batch_layout.addWidget(self.select_all_btn)
 
         batch_layout.addStretch()
 
@@ -114,7 +135,7 @@ class FolderSidebar(QWidget):
         self.batch_delete_btn = QPushButton(parent=batch_header_widget)
         self.batch_delete_btn.setObjectName("IconButton")
         self.batch_delete_btn.setIcon(create_trash_icon("#e03e3e", size=15))
-        self.batch_delete_btn.setFixedSize(26, 26)
+        self.batch_delete_btn.setFixedSize(24, 24)
         self.batch_delete_btn.setToolTip("Delete selected folders")
         self.batch_delete_btn.setEnabled(False)
         self.batch_delete_btn.clicked.connect(self._on_batch_delete_clicked)
@@ -123,11 +144,20 @@ class FolderSidebar(QWidget):
         # Vector checkmark icon button for done
         self.done_btn = QPushButton(parent=batch_header_widget)
         self.done_btn.setObjectName("IconButton")
-        self.done_btn.setIcon(create_done_icon("#0a84ff", size=16))
-        self.done_btn.setFixedSize(26, 26)
+        self.done_btn.setIcon(create_done_icon("#0a84ff", size=15))
+        self.done_btn.setFixedSize(24, 24)
         self.done_btn.setToolTip("Done selecting")
         self.done_btn.clicked.connect(self.exit_selection_mode)
         batch_layout.addWidget(self.done_btn)
+
+        # Vector close/cross icon button for cancel
+        self.cancel_btn = QPushButton(parent=batch_header_widget)
+        self.cancel_btn.setObjectName("IconButton")
+        self.cancel_btn.setIcon(create_close_icon("#8e8e93", size=15))
+        self.cancel_btn.setFixedSize(24, 24)
+        self.cancel_btn.setToolTip("Cancel selection (Esc)")
+        self.cancel_btn.clicked.connect(self.exit_selection_mode)
+        batch_layout.addWidget(self.cancel_btn)
 
         self.header_stack.addWidget(batch_header_widget)
         layout.addWidget(self.header_stack, 0)
@@ -166,7 +196,32 @@ class FolderSidebar(QWidget):
         count = len(self._selected_folders)
         self.select_count_label.setText(f"{count} selected")
         self.batch_delete_btn.setEnabled(count > 0)
-        self.batch_delete_btn.setText(f"Delete ({count})" if count > 0 else "Delete")
+        self.batch_delete_btn.setToolTip(
+            f"Delete {count} selected folder{'s' if count != 1 else ''}"
+            if count > 0
+            else "Delete selected folders"
+        )
+        if count == len(self._folders) and len(self._folders) > 0:
+            self.select_all_btn.setText("Deselect All")
+        else:
+            self.select_all_btn.setText("Select All")
+
+    def _on_toggle_select_all(self) -> None:
+        """Toggle selecting all custom folders."""
+        if len(self._selected_folders) == len(self._folders) and len(self._folders) > 0:
+            self._selected_folders.clear()
+        else:
+            self._selected_folders = set(self._folders)
+        self._update_folder_items()
+        self._update_batch_bar()
+
+    def keyPressEvent(self, event) -> None:
+        """Handle Escape key to cancel selection mode."""
+        if self._is_selection_mode and event.key() == Qt.Key.Key_Escape:
+            self.exit_selection_mode()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _on_batch_delete_clicked(self) -> None:
         """Emit batch delete signal for selected folders."""

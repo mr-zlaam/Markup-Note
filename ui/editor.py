@@ -290,6 +290,65 @@ class MarkdownEditor(QTextEdit):
             self.viewport().update()
             self._show_format_toolbar()
             return
+        elif format_type in ("bullet", "number"):
+            cursor.beginEditBlock()
+            b_start = self.document().findBlock(start)
+            b_end = self.document().findBlock(end)
+            if b_end.position() == end and b_end.blockNumber() > b_start.blockNumber():
+                b_end = b_end.previous()
+
+            blocks = []
+            curr = b_start
+            while curr.isValid() and curr.blockNumber() <= b_end.blockNumber():
+                blocks.append(curr)
+                if curr == b_end:
+                    break
+                curr = curr.next()
+
+            non_empty_blocks = [b for b in blocks if b.text().strip()]
+            if format_type == "bullet":
+                all_formatted = bool(non_empty_blocks) and all(
+                    re.match(r"^\s*[-*+]\s+", b.text()) for b in non_empty_blocks
+                )
+            else:
+                all_formatted = bool(non_empty_blocks) and all(
+                    re.match(r"^\s*\d+\.\s+", b.text()) for b in non_empty_blocks
+                )
+
+            for b in reversed(blocks):
+                b_text = b.text()
+                if not b_text.strip():
+                    continue
+                indent = b_text[: len(b_text) - len(b_text.lstrip())]
+                content = b_text[len(indent) :]
+                content_clean = re.sub(
+                    r"^(\s*[-*+]\s*\[[ xX]?\]\s*|\s*[-*+]\s*|\s*\d+\.\s*)", "", content
+                )
+
+                if all_formatted:
+                    new_line = indent + content_clean
+                else:
+                    if format_type == "bullet":
+                        new_line = indent + "- " + content_clean
+                    else:
+                        fwd_idx = non_empty_blocks.index(b) + 1
+                        new_line = indent + f"{fwd_idx}. " + content_clean
+
+                c = QTextCursor(b)
+                c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                c.insertText(new_line)
+
+            # Re-select affected blocks
+            sel_cursor = QTextCursor(self.document())
+            sel_cursor.setPosition(b_start.position())
+            sel_cursor.setPosition(b_end.position() + len(b_end.text()), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(sel_cursor)
+
+            cursor.endEditBlock()
+            self.viewport().update()
+            self._show_format_toolbar()
+            return
         else:
             return
 

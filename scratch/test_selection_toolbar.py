@@ -151,7 +151,59 @@ def run_tests():
         assert "Mathematics provides a [framework](https://) for describing" in editor.toPlainText()
         print("Link format: PASS")
 
-        # 11. Test Dismissal on Escape
+        # 11. Test Format: Bulleted List
+        print("Testing Bulleted List formatting on multi-line text...")
+        editor.setPlainText("First line\nSecond line\nThird line")
+        app.processEvents()
+        c = editor.textCursor()
+        c.setPosition(0)
+        c.setPosition(len(editor.toPlainText()), QTextCursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(c)
+        app.processEvents()
+        editor._apply_text_format("bullet")
+        app.processEvents()
+        assert editor.toPlainText() == "- First line\n- Second line\n- Third line", f"Got: {editor.toPlainText()}"
+        print("Bulleted list format: PASS")
+
+        # Toggle Bulleted list OFF
+        editor._apply_text_format("bullet")
+        app.processEvents()
+        assert editor.toPlainText() == "First line\nSecond line\nThird line", f"Got: {editor.toPlainText()}"
+        print("Bulleted list toggle OFF: PASS")
+
+        # 12. Test Format: Numbered List
+        print("Testing Numbered List formatting on multi-line text...")
+        editor._apply_text_format("number")
+        app.processEvents()
+        assert editor.toPlainText() == "1. First line\n2. Second line\n3. Third line", f"Got: {editor.toPlainText()}"
+        print("Numbered list format: PASS")
+
+        # Toggle Numbered list OFF
+        editor._apply_text_format("number")
+        app.processEvents()
+        assert editor.toPlainText() == "First line\nSecond line\nThird line", f"Got: {editor.toPlainText()}"
+        print("Numbered list toggle OFF: PASS")
+
+        # 13. Test Toolbar Visual Capture with new List Buttons
+        editor.setPlainText("Mathematics provides a framework for describing physical phenomena.")
+        c = editor.textCursor()
+        c.setPosition(23)
+        c.setPosition(32, QTextCursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(c)
+        app.processEvents()
+        assert editor.format_toolbar.isVisible()
+
+        win_pix = window.grab()
+        tb_pix = editor.format_toolbar.grab()
+        tb_pos = window.mapFromGlobal(editor.format_toolbar.pos())
+        painter = QPainter(win_pix)
+        painter.drawPixmap(tb_pos, tb_pix)
+        painter.end()
+        tb_path = Path("/home/redhats/.gemini/antigravity/brain/70ac962d-bada-4915-826a-b9cd14afaf61/verified_selection_toolbar_with_lists.png")
+        win_pix.save(str(tb_path), "PNG")
+        print(f"Updated selection toolbar screenshot saved to {tb_path}")
+
+        # 14. Test Dismissal on Escape
         print("Testing Toolbar dismissal on Escape...")
         esc_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
         editor.keyPressEvent(esc_event)

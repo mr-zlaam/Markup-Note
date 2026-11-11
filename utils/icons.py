@@ -2,7 +2,7 @@
 
 from typing import List, Optional, Tuple
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 
 def create_search_icon(
@@ -620,6 +620,69 @@ def create_link_icon(
     p_down.arcTo(QRectF(2.0, 7.5, 4.5, 4.5), 0, 90)
     p_down.lineTo(7.2, 10.8)
     painter.drawPath(p_down)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_bullet_list_icon(
+    color: str = "#d0d0d4",
+    size: int = 14,
+    stroke_width: float = 1.3,
+) -> QIcon:
+    """Generate a crisp vector bulleted list icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Bullets (dots)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    r = 1.1
+    for y in (3.5, 7.0, 10.5):
+        painter.drawEllipse(QPointF(2.5, y), r, r)
+
+    # Lines
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    for y in (3.5, 7.0, 10.5):
+        painter.drawLine(QPointF(5.5, y), QPointF(12.0, y))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_number_list_icon(
+    color: str = "#d0d0d4",
+    size: int = 14,
+    stroke_width: float = 1.3,
+) -> QIcon:
+    """Generate a crisp vector numbered list icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    num_font = QFont("Cantarell", 3)
+    num_font.setBold(True)
+    painter.setFont(num_font)
+    painter.setPen(QColor(color))
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+
+    rows = [("1", 3.5), ("2", 7.0), ("3", 10.5)]
+    for num, y in rows:
+        painter.drawText(QRectF(0.5, y - 2.2, 3.5, 4.0), Qt.AlignmentFlag.AlignCenter, num)
+        painter.setPen(pen)
+        painter.drawLine(QPointF(5.5, y), QPointF(12.0, y))
+        painter.setPen(QColor(color))
 
     painter.end()
     return QIcon(pixmap)

@@ -11,7 +11,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from utils.icons import create_link_icon
+from utils.icons import (
+    create_bullet_list_icon,
+    create_link_icon,
+    create_number_list_icon,
+)
 
 
 class SelectionFormatToolbar(QFrame):
@@ -112,13 +116,37 @@ class SelectionFormatToolbar(QFrame):
         self.underline_btn.clicked.connect(lambda: self.format_requested.emit("underline"))
         layout.addWidget(self.underline_btn)
 
-        # Divider
+        # Divider 1
         divider1 = QFrame(parent=self)
         divider1.setObjectName("VDivider")
         divider1.setFrameShape(QFrame.Shape.VLine)
         layout.addWidget(divider1)
 
-        # 5. Link Button
+        # 5. Bulleted List Button
+        self.bullet_btn = QPushButton(parent=self)
+        self.bullet_btn.setObjectName("FormatBtn")
+        self.bullet_btn.setToolTip("Bulleted List (- item)")
+        self.bullet_btn.setIcon(create_bullet_list_icon(color="#d0d0d4", size=14))
+        self.bullet_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.bullet_btn.clicked.connect(lambda: self.format_requested.emit("bullet"))
+        layout.addWidget(self.bullet_btn)
+
+        # 6. Numbered List Button
+        self.number_btn = QPushButton(parent=self)
+        self.number_btn.setObjectName("FormatBtn")
+        self.number_btn.setToolTip("Numbered List (1. item)")
+        self.number_btn.setIcon(create_number_list_icon(color="#d0d0d4", size=14))
+        self.number_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.number_btn.clicked.connect(lambda: self.format_requested.emit("number"))
+        layout.addWidget(self.number_btn)
+
+        # Divider 2
+        divider2 = QFrame(parent=self)
+        divider2.setObjectName("VDivider")
+        divider2.setFrameShape(QFrame.Shape.VLine)
+        layout.addWidget(divider2)
+
+        # 7. Link Button
         self.link_btn = QPushButton(parent=self)
         self.link_btn.setObjectName("FormatBtn")
         self.link_btn.setToolTip("Link ([text](url))")
@@ -127,7 +155,7 @@ class SelectionFormatToolbar(QFrame):
         self.link_btn.clicked.connect(lambda: self.format_requested.emit("link"))
         layout.addWidget(self.link_btn)
 
-        # 6. Inline Code Button
+        # 8. Inline Code Button
         self.code_btn = QPushButton("</>", parent=self)
         self.code_btn.setObjectName("FormatBtn")
         self.code_btn.setToolTip("Inline Code (`code`)")

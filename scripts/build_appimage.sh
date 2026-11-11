@@ -134,7 +134,7 @@ elif [ -f "$BUILD_DIR/runtime-x86_64" ]; then
     RUNTIME_ARG="--runtime-file $BUILD_DIR/runtime-x86_64"
 fi
 
-appimagetool $RUNTIME_ARG "$APPDIR" "$OUTPUT_APPIMAGE"
+appimagetool --comp zstd $RUNTIME_ARG "$APPDIR" "$OUTPUT_APPIMAGE"
 
 echo "==> AppImage created successfully!"
 echo "    File: $OUTPUT_APPIMAGE"

@@ -7,15 +7,34 @@ from pathlib import Path
 def get_default_notes_dir() -> Path:
     """Return the default directory for storing markdown notes.
 
-    Respects the standard Linux ~/Documents directory or falls back gracefully.
+    Respects the standard Linux ~/Documents/Markup Notes directory.
+    Gracefully migrates existing notes from legacy ~/Documents/Notes if present.
     """
-    documents_dir = Path.home() / "Documents" / "Notes"
+    documents_dir = Path.home() / "Documents" / "Markup Notes"
+    legacy_notes_dir = Path.home() / "Documents" / "Notes"
+    legacy_notetaker_dir = Path.home() / "Documents" / "Note Taker"
+
     try:
+        # Check if legacy directory exists and new directory doesn't exist yet
+        if not documents_dir.exists():
+            candidate = None
+            if legacy_notes_dir.exists() and any(legacy_notes_dir.iterdir()):
+                candidate = legacy_notes_dir
+            elif legacy_notetaker_dir.exists() and any(legacy_notetaker_dir.iterdir()):
+                candidate = legacy_notetaker_dir
+
+            if candidate is not None:
+                try:
+                    import shutil
+                    shutil.copytree(candidate, documents_dir, dirs_exist_ok=True)
+                except OSError:
+                    pass
+
         documents_dir.mkdir(parents=True, exist_ok=True)
         return documents_dir
     except OSError:
         # Fallback gracefully if ~/Documents is read-only or in container/sandbox
-        fallback = Path.cwd() / "notes"
+        fallback = Path.cwd() / "markup_notes"
         try:
             fallback.mkdir(parents=True, exist_ok=True)
             return fallback
@@ -45,7 +64,7 @@ def get_config_dir() -> Path:
         return config_dir
     except OSError:
         # Fallback gracefully if ~/.config is read-only (e.g. sandbox, test, or container)
-        fallback = Path.home() / "Documents" / "Notes" / ".config"
+        fallback = Path.home() / "Documents" / "Markup Notes" / ".config"
         try:
             fallback.mkdir(parents=True, exist_ok=True)
             return fallback

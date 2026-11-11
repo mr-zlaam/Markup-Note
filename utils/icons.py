@@ -752,23 +752,51 @@ def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path
 STANDARD_ICON_SIZES: List[int] = [16, 24, 32, 48, 64, 128, 256, 512]
 
 
+def mask_squircle(image: "QImage", radius_ratio: float = 0.2237) -> "QImage":
+    """Mask image with a smooth continuous squircle (rounded superellipse) with transparent corners."""
+    from PyQt6.QtGui import QImage, QPainter, QPainterPath
+
+    w, h = image.width(), image.height()
+    radius = w * radius_ratio
+
+    masked = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    masked.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(masked)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(0, 0, w, h), radius, radius)
+    painter.setClipPath(path)
+    painter.drawImage(0, 0, image)
+    painter.end()
+
+    return masked
+
+
 def generate_standard_app_icons(
     source_icon_path: Optional[Path] = None,
     assets_root: Optional[Path] = None,
+    apply_squircle: bool = True,
 ) -> List[Path]:
-    """Generate all standard Linux XDG hicolor icon sizes from the high-res app icon.
+    """Generate all standard Linux XDG hicolor icon sizes from the master app icon.
 
-    Creates both XDG hicolor tree (assets/icons/hicolor/<size>x<size>/apps/markup-notes.png)
+    Applies a smooth continuous squircle mask with transparent outer corners,
+    creates the XDG hicolor tree (assets/icons/hicolor/<size>x<size>/apps/markup-notes.png),
     and top-level convenience icons (assets/icons/markup-notes-<size>x<size>.png).
     """
     from PyQt6.QtGui import QImage
 
     project_root = Path(__file__).resolve().parent.parent
-    src = (
-        source_icon_path
-        if source_icon_path is not None
-        else project_root / "assets" / "markup-note.png"
-    )
+    original_src = project_root / "assets" / "markup-note-original.png"
+    if source_icon_path is not None:
+        src = source_icon_path
+    elif original_src.exists():
+        src = original_src
+    else:
+        src = project_root / "assets" / "markup-note.png"
+
     if not src.exists():
         return []
 
@@ -776,11 +804,17 @@ def generate_standard_app_icons(
     if orig_image.isNull():
         return []
 
+    # Apply squircle mask to ensure smooth rounded corners with transparent background
+    master_image = mask_squircle(orig_image) if apply_squircle else orig_image
+    # Save masked version to assets/markup-note.png
+    dest_master = project_root / "assets" / "markup-note.png"
+    master_image.save(str(dest_master), "PNG")
+
     base_assets = assets_root if assets_root is not None else project_root / "assets"
     generated_paths: List[Path] = []
 
     for size in STANDARD_ICON_SIZES:
-        scaled = orig_image.scaled(
+        scaled = master_image.scaled(
             size,
             size,
             Qt.AspectRatioMode.KeepAspectRatio,

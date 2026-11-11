@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Markup Notes
-Comment=Lightweight Markdown Notes for Electron haters
+Comment=Notes App for Electron haters
 Exec=python3 /home/redhats/Work/Desktop-apps/Note-Taker/main.py
 Icon=markup-notes
 Terminal=false

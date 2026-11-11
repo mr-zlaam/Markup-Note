@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 from core.config import ConfigManager
 from core.note import Note
 from core.storage import StorageManager
-from ui.dialogs import ModernConfirmDialog, ModernInputDialog
+from ui.dialogs import ModernConfirmDialog, ModernInputDialog, ModernMessageDialog
 from ui.editor import EditorPanel
 from ui.note_list import NoteListPanel
 from ui.sidebar import FolderSidebar
@@ -262,6 +262,30 @@ class MainWindow(QMainWindow):
     def _on_create_folder(
         self, folder_name: str, parent_folder: Optional[Path] = None
     ) -> None:
+        safe_name = self.storage.sanitize_filename(folder_name)
+        if not safe_name:
+            ModernMessageDialog.show_error(
+                self,
+                "Invalid Folder Name",
+                "Please enter a valid folder name containing letters or numbers.",
+            )
+            return
+
+        base_dir = (
+            parent_folder
+            if (parent_folder is not None and parent_folder.exists())
+            else self.storage.root_dir
+        )
+        target_path = base_dir / safe_name
+        if target_path.exists():
+            loc = f"inside '{parent_folder.name}'" if parent_folder else "in Folders"
+            ModernMessageDialog.show_error(
+                self,
+                "Folder Already Exists",
+                f"A folder named '{folder_name}' already exists {loc}.\nPlease choose a different name.",
+            )
+            return
+
         new_folder = self.storage.create_folder(folder_name, parent_folder=parent_folder)
         if new_folder is not None:
             folders = self.storage.get_folders()
@@ -269,6 +293,12 @@ class MainWindow(QMainWindow):
             self._current_folder = new_folder
             self._update_watcher_paths()
             self._refresh_notes()
+        else:
+            ModernMessageDialog.show_error(
+                self,
+                "Folder Creation Failed",
+                f"Could not create folder '{folder_name}'. Please check disk permissions.",
+            )
 
     def _on_note_selected(self, note: Note) -> None:
         if self._current_note is not None and self._current_note.path == note.path:
@@ -370,6 +400,23 @@ class MainWindow(QMainWindow):
             confirm_text="Rename",
         )
         if ok and new_name and new_name != folder_path.name:
+            safe_name = self.storage.sanitize_filename(new_name)
+            if not safe_name:
+                ModernMessageDialog.show_error(
+                    self,
+                    "Invalid Folder Name",
+                    "Please enter a valid folder name containing letters or numbers.",
+                )
+                return
+            target_path = folder_path.parent / safe_name
+            if target_path.exists() and target_path != folder_path:
+                ModernMessageDialog.show_error(
+                    self,
+                    "Folder Already Exists",
+                    f"A folder named '{new_name}' already exists in this location.\nPlease choose a different name.",
+                )
+                return
+
             renamed_folder = self.storage.rename_folder(folder_path, new_name)
             if renamed_folder is not None:
                 self._transfer_folder_color(folder_path.name, new_name)
@@ -378,6 +425,12 @@ class MainWindow(QMainWindow):
                 self._update_watcher_paths()
                 self.sidebar.set_folders(self.storage.get_folders(), current_selection=self._current_folder)
                 self._refresh_notes()
+            else:
+                ModernMessageDialog.show_error(
+                    self,
+                    "Rename Failed",
+                    f"Could not rename folder '{folder_path.name}'. Please check disk permissions.",
+                )
 
     def _on_delete_folder(self, folder_path: Path) -> None:
         """Delete an existing folder and all notes inside it."""

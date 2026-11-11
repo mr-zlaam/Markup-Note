@@ -18,16 +18,15 @@ QSplitter::handle:horizontal {
     width: 1px;
 }
 
-/* Sidebar List & Tree */
-QListWidget#SidebarList, QTreeWidget#SidebarTree {
+/* Sidebar List (flat fallback) */
+QListWidget#SidebarList {
     background-color: #181818;
     border: none;
     padding: 8px 4px;
     outline: none;
-    show-decoration-selected: 1;
 }
 
-QListWidget#SidebarList::item, QTreeWidget#SidebarTree::item {
+QListWidget#SidebarList::item {
     padding: 6px 8px;
     border-radius: 4px;
     margin: 1px 2px;
@@ -35,12 +34,41 @@ QListWidget#SidebarList::item, QTreeWidget#SidebarTree::item {
     font-weight: 500;
 }
 
-QListWidget#SidebarList::item:selected, QTreeWidget#SidebarTree::item:selected {
+QListWidget#SidebarList::item:selected {
     background-color: #2a2a2a;
     color: #f3f3f3;
 }
 
-QListWidget#SidebarList::item:hover:!selected, QTreeWidget#SidebarTree::item:hover:!selected {
+QListWidget#SidebarList::item:hover:!selected {
+    background-color: #222222;
+    color: #e0e0e0;
+}
+
+/* Sidebar Tree (hierarchical folder structure) */
+QTreeWidget#SidebarTree {
+    background-color: #181818;
+    border: none;
+    padding: 6px 4px;
+    outline: none;
+    show-decoration-selected: 1;
+}
+
+QTreeWidget#SidebarTree::item {
+    padding: 6px 4px;
+    border-radius: 0px;
+    margin: 0px;
+    color: #b0b0b0;
+    font-weight: 500;
+}
+
+QTreeWidget#SidebarTree::item:selected,
+QTreeWidget#SidebarTree::branch:selected {
+    background-color: #2a2a2a;
+    color: #f3f3f3;
+}
+
+QTreeWidget#SidebarTree::item:hover:!selected,
+QTreeWidget#SidebarTree::branch:hover:!selected {
     background-color: #222222;
     color: #e0e0e0;
 }
@@ -49,8 +77,12 @@ QTreeWidget#SidebarTree::branch {
     background: transparent;
 }
 
-QTreeWidget#SidebarTree::branch:selected {
-    background-color: #2a2a2a;
+QTreeWidget#SidebarTree::branch:has-children:closed {
+    image: url("CHEVRON_RIGHT_URL");
+}
+
+QTreeWidget#SidebarTree::branch:has-children:open {
+    image: url("CHEVRON_DOWN_URL");
 }
 
 /* Note Cards List */
@@ -205,9 +237,60 @@ QToolTip {
     font-size: 11px;
     font-weight: 500;
 }
+
+/* Modern Dark File Dialog */
+QFileDialog {
+    background-color: #202024;
+    color: #e0e0e0;
+}
+QFileDialog QListView, QFileDialog QTreeView {
+    background-color: #1a1a1d;
+    color: #e0e0e4;
+    border: 1px solid #36363c;
+    border-radius: 6px;
+    selection-background-color: #0a84ff;
+    selection-color: #ffffff;
+}
+QFileDialog QHeaderView::section {
+    background-color: #242428;
+    color: #9c9ca4;
+    padding: 4px;
+    border: none;
+    border-bottom: 1px solid #36363c;
+}
+QFileDialog QLineEdit {
+    background-color: #161619;
+    border: 1px solid #383840;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #ffffff;
+}
+QFileDialog QPushButton {
+    background-color: #2c2c32;
+    color: #e0e0e0;
+    border: 1px solid #3c3c44;
+    border-radius: 6px;
+    padding: 6px 14px;
+}
+QFileDialog QPushButton:hover {
+    background-color: #383840;
+    color: #ffffff;
+}
 """
 
 
 def apply_theme(app) -> None:
-    """Apply the application-wide dark styling."""
-    app.setStyleSheet(DARK_THEME_QSS)
+    """Apply the application-wide dark styling and ensure assets."""
+    from utils.icons import ensure_chevron_assets
+    themed_qss = DARK_THEME_QSS
+    try:
+        right_path, down_path = ensure_chevron_assets()
+        r_url = right_path.resolve().as_posix()
+        d_url = down_path.resolve().as_posix()
+        themed_qss = themed_qss.replace("CHEVRON_RIGHT_URL", r_url).replace("CHEVRON_DOWN_URL", d_url)
+    except Exception:
+        # Fallback to relative assets path if dynamic resolution fails
+        themed_qss = themed_qss.replace("CHEVRON_RIGHT_URL", "assets/chevron_right.png").replace(
+            "CHEVRON_DOWN_URL", "assets/chevron_down.png"
+        )
+    app.setStyleSheet(themed_qss)

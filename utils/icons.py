@@ -1,7 +1,8 @@
 """Native high-DPI vector icon generation utilities for Note Taker UI."""
 
 from typing import List, Optional, Tuple
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from pathlib import Path
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 
@@ -725,3 +726,25 @@ def create_export_icon(
 
     painter.end()
     return QIcon(pixmap)
+
+
+def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path]:
+    """Ensure crisp high-DPI vector chevron PNGs exist for QTreeWidget branch styling."""
+    assets_dir = (
+        target_dir
+        if target_dir is not None
+        else Path(__file__).resolve().parent.parent / "assets"
+    )
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    right_path = assets_dir / "chevron_right.png"
+    down_path = assets_dir / "chevron_down.png"
+
+    if not right_path.exists():
+        r_icon = create_chevron_icon("right", color="#8e8e93", size=14, stroke_width=1.8)
+        r_icon.pixmap(QSize(28, 28)).save(str(right_path), "PNG")
+    if not down_path.exists():
+        d_icon = create_chevron_icon("down", color="#8e8e93", size=14, stroke_width=1.8)
+        d_icon.pixmap(QSize(28, 28)).save(str(down_path), "PNG")
+
+    return right_path, down_path
+

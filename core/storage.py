@@ -43,10 +43,12 @@ class StorageManager:
             else self.root_dir
         )
         folder_path = base_dir / safe_name
+        if folder_path.exists():
+            return None
         try:
-            folder_path.mkdir(parents=True, exist_ok=True)
+            folder_path.mkdir(parents=True, exist_ok=False)
             return folder_path
-        except (PermissionError, OSError):
+        except (PermissionError, OSError, FileExistsError):
             return None
 
     def list_notes(self, folder: Optional[Path] = None) -> List[Note]:

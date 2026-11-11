@@ -113,6 +113,9 @@ class NoteListPanel(QWidget):
         self._notes: List[Note] = []
         self._init_ui()
 
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 6, 4, 4)

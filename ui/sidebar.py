@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -33,12 +33,15 @@ class FolderSidebar(QWidget):
         super().__init__(parent=parent)
         self._init_ui()
 
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 8, 4, 8)
         layout.setSpacing(6)
 
-        # Header with title, "New Folder" (+) button, and sidebar collapse button
+        # Header with title and "New Folder" (+) button
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(10, 4, 6, 4)
         header_layout.setSpacing(4)
@@ -58,7 +61,7 @@ class FolderSidebar(QWidget):
         self.add_folder_btn.clicked.connect(self._on_add_folder_clicked)
         header_layout.addWidget(self.add_folder_btn)
 
-        # Vector sidebar collapse icon
+        # Domain-owned collapse button for Folders
         self.collapse_btn = QPushButton(parent=self)
         self.collapse_btn.setObjectName("IconButton")
         self.collapse_btn.setIcon(create_sidebar_toggle_icon("#8e8e93", size=15))

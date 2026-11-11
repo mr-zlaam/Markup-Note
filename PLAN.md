@@ -48,10 +48,15 @@
   * Persists layout state (`folders_visible`, `notes_list_visible`, `folders_width`, `notes_list_width`) and window geometry (`width`, `height`, `maximized`) to `~/.config/note-taker/settings.json`.
   * Atomic file writing prevents corruption; graceful defaults prevent startup crashes.
   * Preserves exact collapsed/expanded panel states across app restarts.
-* 🟢 **`[Completed]`** **Interactive Panel Collapse & Expand System:**
-  * **Folders Collapse:** Toggle icon button in Folders header closes pane to 0px; toggle button at the top-left of Note List header expands Folders back.
-  * **Notes List Collapse:** Toggle icon button in Note List header closes pane to 0px; expand button in Editor header restores Notes list.
-  * **Distraction-Free Mode:** When both Folders and Notes are collapsed, Editor takes 100% of window width.
+* 🟢 **`[Completed]`** **Domain-Owned Controls & Dynamic Edge Handoff:**
+  * **Domain Ownership:** Every collapsible pane owns its collapse button strictly within its own header:
+    * Folders header has `FOLDERS` title, `+` (New Folder), and `[| ]` (Collapse Folders).
+    * Notes list header has `[ 🔍 Search notes... ]`, `+ Note`, and `[ | ]` (Collapse Notes).
+  * **Dynamic Edge Handoff:** When a pane collapses to `0px`, the surviving adjacent pane dynamically reveals the restore button at its outer edge:
+    * When Folders collapses: Notes list reveals `[| ]` at the left of the search bar.
+    * When Notes collapses: Editor reveals `[ | ]` at its top-left header.
+  * **Smooth Slide Animation (`QVariantAnimation`):** Smooth 220ms sliding animation with cubic easing (`OutCubic`), zero-flicker handoffs, and instant reversal safety.
+  * **Restart Persistence:** Saves and restores collapsed states via `~/.config/note-taker/settings.json`.
 * 🟢 **`[Completed]`** **Native High-DPI Vector Icons (`utils/icons.py`):**
   * Embedded magnifying glass search icon inside `QLineEdit` search input.
   * Clean vector `+` icons for "New Folder" and "New Note" buttons with rounded terminal caps.

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import QFileSystemWatcher, QTimer, Qt
+from PyQt6.QtCore import QEasingCurve, QFileSystemWatcher, QTimer, QVariantAnimation, Qt
 from PyQt6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self._current_note: Optional[Note] = None
         self._all_current_notes: List[Note] = []
         self._is_saving_internally: bool = False
+        self._active_pane_anim: Optional[QVariantAnimation] = None
 
         # File system watcher for external edits
         self.watcher = QFileSystemWatcher(parent=self)
@@ -291,61 +292,113 @@ class MainWindow(QMainWindow):
         self.config_manager.save()
 
     def _update_panel_buttons(self) -> None:
-        """Synchronize toggle button visibilities and tooltips with current splitter state."""
-        sizes = self.splitter.sizes()
-        is_folders_collapsed = (sizes[0] == 0)
-        is_notes_collapsed = (sizes[1] == 0)
+        """Synchronize toggle button visibilities and tooltips with current state."""
+        folders_open = self.config.layout.folders_visible
+        notes_open = self.config.layout.notes_list_visible
 
-        # In Note List: show toggle folders icon
-        if is_folders_collapsed:
-            self.note_list.toggle_folders_btn.setToolTip("Show Folders (Ctrl+\\)")
-        else:
-            self.note_list.toggle_folders_btn.setToolTip("Hide Folders (Ctrl+\\)")
+        # 1. Folders domain: Sidebar owns its collapse button when open
+        self.sidebar.collapse_btn.setVisible(folders_open)
+        self.sidebar.collapse_btn.setToolTip("Collapse Folders (Ctrl+\\)")
 
-        # In Editor: show expand notes icon only when notes list is collapsed
-        self.editor.expand_notes_btn.setVisible(is_notes_collapsed)
+        # 2. Folders restore button in Note List header: only visible when Folders is collapsed
+        self.note_list.toggle_folders_btn.setVisible(not folders_open)
+        self.note_list.toggle_folders_btn.setToolTip("Show Folders (Ctrl+\\)")
+
+        # 3. Notes domain: Note List owns its collapse button when open
+        self.note_list.collapse_notes_btn.setVisible(notes_open)
+        self.note_list.collapse_notes_btn.setToolTip("Collapse Notes (Ctrl+Shift+\\)")
+
+        # 4. Notes restore button in Editor header: only visible when Notes is collapsed
+        self.editor.expand_notes_btn.setVisible(not notes_open)
+        self.editor.expand_notes_btn.setToolTip("Show Notes (Ctrl+Shift+\\)")
+
+    def _animate_splitter_pane(self, pane_index: int, target_w: int) -> None:
+        """Smoothly slide a splitter pane to target_w using QVariantAnimation."""
+        if self._active_pane_anim is not None:
+            self._active_pane_anim.stop()
+            self._active_pane_anim = None
+
+        sizes = list(self.splitter.sizes())
+        start_w = sizes[pane_index]
+        if start_w == target_w:
+            self._update_panel_buttons()
+            return
+
+        total_w = sum(sizes)
+        other_pane_index = 1 if pane_index == 0 else 0
+        other_w = sizes[other_pane_index]
+
+        # Dynamic handoff: if expanding, immediately hide the adjacent restore button
+        if pane_index == 0 and target_w > 0:
+            self.note_list.toggle_folders_btn.setVisible(False)
+        elif pane_index == 1 and target_w > 0:
+            self.editor.expand_notes_btn.setVisible(False)
+
+        anim = QVariantAnimation(self)
+        anim.setDuration(220)
+        anim.setStartValue(start_w)
+        anim.setEndValue(target_w)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def _on_step(val: object) -> None:
+            curr_w = int(val)
+            if pane_index == 0:
+                editor_w = max(100, total_w - curr_w - other_w)
+                self.splitter.setSizes([curr_w, other_w, editor_w])
+            else:
+                editor_w = max(100, total_w - other_w - curr_w)
+                self.splitter.setSizes([other_w, curr_w, editor_w])
+
+        def _on_finish() -> None:
+            self._active_pane_anim = None
+            if pane_index == 0:
+                editor_w = max(100, total_w - target_w - other_w)
+                self.splitter.setSizes([target_w, other_w, editor_w])
+            else:
+                editor_w = max(100, total_w - other_w - target_w)
+                self.splitter.setSizes([other_w, target_w, editor_w])
+
+            self._update_panel_buttons()
+            self.config_manager.save()
+
+        anim.valueChanged.connect(_on_step)
+        anim.finished.connect(_on_finish)
+        self._active_pane_anim = anim
+        anim.start()
 
     def _toggle_sidebar(self) -> None:
-        """Toggle left folders sidebar between collapsed (0px) and expanded."""
-        sizes = self.splitter.sizes()
-        if sizes[0] > 0:
-            # Collapse folders
-            self.config.layout.folders_width = max(180, sizes[0])
+        """Toggle left folders sidebar between collapsed (0px) and expanded with smooth slide."""
+        if self.config.layout.folders_visible:
+            # Currently visible -> Collapse
+            curr_w = self.splitter.sizes()[0]
+            if curr_w > 80:
+                self.config.layout.folders_width = curr_w
             self.config.layout.folders_visible = False
-            self.splitter.setSizes([0, sizes[1], sizes[2] + sizes[0]])
+            self._animate_splitter_pane(pane_index=0, target_w=0)
         else:
-            # Restore folders
+            # Currently collapsed -> Restore
             restore_w = self.config.layout.folders_width
             if restore_w < 120:
                 restore_w = 190
             self.config.layout.folders_visible = True
-            delta = restore_w
-            new_s2 = max(250, sizes[2] - delta)
-            self.splitter.setSizes([restore_w, sizes[1], new_s2])
-
-        self._update_panel_buttons()
-        self.config_manager.save()
+            self._animate_splitter_pane(pane_index=0, target_w=restore_w)
 
     def _toggle_notes_list(self) -> None:
-        """Toggle middle notes list between collapsed (0px) and expanded."""
-        sizes = self.splitter.sizes()
-        if sizes[1] > 0:
-            # Collapse notes list (distraction-free editor mode)
-            self.config.layout.notes_list_width = max(220, sizes[1])
+        """Toggle middle notes list between collapsed (0px) and expanded with smooth slide."""
+        if self.config.layout.notes_list_visible:
+            # Currently visible -> Collapse (distraction-free editor mode)
+            curr_w = self.splitter.sizes()[1]
+            if curr_w > 100:
+                self.config.layout.notes_list_width = curr_w
             self.config.layout.notes_list_visible = False
-            self.splitter.setSizes([sizes[0], 0, sizes[2] + sizes[1]])
+            self._animate_splitter_pane(pane_index=1, target_w=0)
         else:
-            # Restore notes list
+            # Currently collapsed -> Restore
             restore_w = self.config.layout.notes_list_width
             if restore_w < 150:
                 restore_w = 280
             self.config.layout.notes_list_visible = True
-            delta = restore_w
-            new_s2 = max(250, sizes[2] - delta)
-            self.splitter.setSizes([sizes[0], restore_w, new_s2])
-
-        self._update_panel_buttons()
-        self.config_manager.save()
+            self._animate_splitter_pane(pane_index=1, target_w=restore_w)
 
     def flush_pending_save(self) -> None:
         """Flush any unsaved debounced editor changes immediately."""

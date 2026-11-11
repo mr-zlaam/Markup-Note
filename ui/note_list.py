@@ -112,7 +112,7 @@ class NoteCardDelegate(QStyledItemDelegate):
         # 1. Draw Title with vector Markdown icon
         title_font = QFont(option.font)
         title_font.setPointSize(10)
-        title_font.setBold(True)
+        title_font.setBold(False)
         painter.setFont(title_font)
         painter.setPen(QColor("#ffffff" if is_selected else "#ececec"))
 

@@ -1,11 +1,13 @@
-"""Application entry point for Note Taker."""
+"""Application entry point for Markup Notes."""
 
 import signal
 import sys
+from pathlib import Path
 from types import FrameType
 from typing import Optional
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
@@ -13,10 +15,14 @@ from ui.theme import apply_theme
 
 
 def main() -> None:
-    """Launch the Note Taker application with clean Ctrl+C terminal signal handling."""
+    """Launch the Markup Notes application with clean Ctrl+C terminal signal handling."""
     app = QApplication(sys.argv)
-    app.setApplicationName("Note Taker")
-    app.setOrganizationName("NoteTaker")
+    app.setApplicationName("Markup Notes")
+    app.setOrganizationName("MarkupNotes")
+
+    icon_path = Path(__file__).resolve().parent / "assets" / "markup-note.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Apply modern Apple Notes dark theme
     apply_theme(app)

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PyQt6.QtCore import QEasingCurve, QFileSystemWatcher, QTimer, QVariantAnimation, Qt
-from PyQt6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PyQt6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMainWindow, QSplitter, QWidget
 
 from core.config import ConfigManager
@@ -26,9 +26,13 @@ class MainWindow(QMainWindow):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent=parent)
-        self.setWindowTitle("Note Taker")
+        self.setWindowTitle("Markup Notes")
 
-        # Load persisted settings from ~/.config/note-taker/settings.json
+        icon_path = Path(__file__).resolve().parent.parent / "assets" / "markup-note.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
+        # Load persisted settings from ~/.config/markup-notes/settings.json
         self.config_manager = config_manager if config_manager is not None else ConfigManager()
         self.config = self.config_manager.settings
 

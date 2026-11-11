@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 
 from core.note import Note
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
+from ui.selection_toolbar import SelectionFormatToolbar
 from ui.slash_menu import SlashCommand, SlashCommandPalette
 from utils.touch import TouchScrollTracker, is_touch_event
 from utils.icons import create_notes_toggle_icon, create_sidebar_toggle_icon
@@ -196,10 +197,146 @@ class MarkdownEditor(QTextEdit):
         self.slash_palette.command_selected.connect(self._on_slash_command_selected)
         self._slash_start_pos: Optional[int] = None
 
+        # Floating text format bubble toolbar (Notion-style inline formatting)
+        self.format_toolbar = SelectionFormatToolbar(self)
+        self.format_toolbar.format_requested.connect(self._apply_text_format)
+        self.selectionChanged.connect(self._on_selection_changed)
+
     def focusOutEvent(self, event) -> None:
         if self.slash_palette.isVisible() and not self.slash_palette.hasFocus():
             self.slash_palette.hide()
+        if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible() and not self.format_toolbar.hasFocus():
+            self.format_toolbar.hide()
         super().focusOutEvent(event)
+
+    def _on_selection_changed(self) -> None:
+        """Show or hide the floating format toolbar based on current text selection."""
+        cursor = self.textCursor()
+        if not cursor.hasSelection() or not cursor.selectedText().strip():
+            if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+                self.format_toolbar.hide()
+            return
+
+        if self.slash_palette.isVisible():
+            return
+
+        self._show_format_toolbar()
+
+    def _show_format_toolbar(self) -> None:
+        """Compute the bounding rectangle of selected text and anchor the toolbar above it."""
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return
+
+        start_c = QTextCursor(cursor)
+        start_c.setPosition(cursor.selectionStart())
+        end_c = QTextCursor(cursor)
+        end_c.setPosition(cursor.selectionEnd())
+
+        r_start = self.cursorRect(start_c)
+        r_end = self.cursorRect(end_c)
+
+        sel_left = min(r_start.left(), r_end.left())
+        sel_right = max(r_start.right(), r_end.right())
+        sel_top = min(r_start.top(), r_end.top())
+        sel_bottom = max(r_start.bottom(), r_end.bottom())
+
+        sel_rect = QRect(sel_left, sel_top, max(24, sel_right - sel_left), max(16, sel_bottom - sel_top))
+        global_top_left = self.viewport().mapToGlobal(sel_rect.topLeft())
+        global_rect = QRect(global_top_left.x(), global_top_left.y(), sel_rect.width(), sel_rect.height())
+
+        self.format_toolbar.show_above_rect(global_rect)
+
+    def _apply_text_format(self, format_type: str) -> None:
+        """Apply or toggle inline markdown formatting on selected text."""
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return
+
+        text = cursor.selectedText()
+        if not text:
+            return
+
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+
+        if format_type == "bold":
+            prefix, suffix = "**", "**"
+        elif format_type == "italic":
+            prefix, suffix = "*", "*"
+        elif format_type == "strike":
+            prefix, suffix = "~~", "~~"
+        elif format_type == "underline":
+            prefix, suffix = "<u>", "</u>"
+        elif format_type == "code":
+            prefix, suffix = "`", "`"
+        elif format_type == "link":
+            cursor.beginEditBlock()
+            if text.startswith("[") and "](" in text and text.endswith(")"):
+                inner = text[1:text.index("](")]
+                cursor.insertText(inner)
+                new_cursor = self.textCursor()
+                new_cursor.setPosition(start)
+                new_cursor.setPosition(start + len(inner), QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(new_cursor)
+            else:
+                formatted = f"[{text}](https://)"
+                cursor.insertText(formatted)
+                new_cursor = self.textCursor()
+                new_cursor.setPosition(start)
+                new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(new_cursor)
+            cursor.endEditBlock()
+            self.viewport().update()
+            self._show_format_toolbar()
+            return
+        else:
+            return
+
+        cursor.beginEditBlock()
+
+        # 1. Check if selection itself is already wrapped in prefix/suffix
+        if text.startswith(prefix) and text.endswith(suffix) and len(text) >= len(prefix) + len(suffix):
+            unwrapped = text[len(prefix):-len(suffix)]
+            cursor.insertText(unwrapped)
+            new_cursor = self.textCursor()
+            new_cursor.setPosition(start)
+            new_cursor.setPosition(start + len(unwrapped), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(new_cursor)
+        else:
+            # 2. Check if surrounding characters in document are already prefix/suffix
+            doc_text = self.document().toPlainText()
+            p_len = len(prefix)
+            s_len = len(suffix)
+            has_surrounding = False
+            if start >= p_len and end + s_len <= len(doc_text):
+                if doc_text[start - p_len:start] == prefix and doc_text[end:end + s_len] == suffix:
+                    has_surrounding = True
+
+            if has_surrounding:
+                del_cursor = QTextCursor(self.document())
+                del_cursor.setPosition(end)
+                del_cursor.setPosition(end + s_len, QTextCursor.MoveMode.KeepAnchor)
+                del_cursor.removeSelectedText()
+                del_cursor.setPosition(start - p_len)
+                del_cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
+                del_cursor.removeSelectedText()
+
+                new_cursor = self.textCursor()
+                new_cursor.setPosition(start - p_len)
+                new_cursor.setPosition(end - p_len, QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(new_cursor)
+            else:
+                wrapped = f"{prefix}{text}{suffix}"
+                cursor.insertText(wrapped)
+                new_cursor = self.textCursor()
+                new_cursor.setPosition(start)
+                new_cursor.setPosition(start + len(wrapped), QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(new_cursor)
+
+        cursor.endEditBlock()
+        self.viewport().update()
+        self._show_format_toolbar()
 
     def _show_slash_palette(self) -> None:
         """Position and display the floating slash palette directly beneath the cursor."""
@@ -1077,6 +1214,8 @@ class MarkdownEditor(QTextEdit):
         """Handle clicking directly on checkboxes, buttons, scrollbars, or Ctrl+Click on links."""
         if self.slash_palette.isVisible():
             self.slash_palette.hide()
+        if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+            self.format_toolbar.hide()
 
         if is_touch_event(event):
             self._on_touch_down(event.position())
@@ -1215,6 +1354,8 @@ class MarkdownEditor(QTextEdit):
         """Handle horizontal scrolling on tables and code blocks with trackpad or Shift+Wheel."""
         if self.slash_palette.isVisible():
             self.slash_palette.hide()
+        if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+            self.format_toolbar.hide()
 
         pos = event.position()
         delta_x = event.angleDelta().x()
@@ -1262,6 +1403,14 @@ class MarkdownEditor(QTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle Escape exit, Ctrl+Enter toggling, smart list continuation, and Tab indentation."""
+        # Dismiss format toolbar on keypress
+        if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+            if event.key() == Qt.Key.Key_Escape:
+                self.format_toolbar.hide()
+                event.accept()
+                return
+            self.format_toolbar.hide()
+
         # 0. Intercept Slash Command Palette navigation and execution when open
         if self.slash_palette.isVisible():
             if event.key() == Qt.Key.Key_Escape:
@@ -1783,6 +1932,8 @@ class EditorPanel(QWidget):
         self._current_note = note
         self._save_timer.stop()
         self.editor.slash_palette.hide()
+        if hasattr(self.editor, "format_toolbar"):
+            self.editor.format_toolbar.hide()
         if self._title_timer.isActive():
             self._title_timer.stop()
 

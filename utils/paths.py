@@ -31,7 +31,15 @@ def get_config_dir() -> Path:
     else:
         base_dir = Path.home() / ".config"
 
-    config_dir = base_dir / "note-taker"
+    config_dir = base_dir / "markup-notes"
+    old_config_dir = base_dir / "note-taker"
+    if not config_dir.exists() and old_config_dir.exists():
+        try:
+            import shutil
+            shutil.copytree(old_config_dir, config_dir)
+        except OSError:
+            pass
+
     try:
         config_dir.mkdir(parents=True, exist_ok=True)
         return config_dir

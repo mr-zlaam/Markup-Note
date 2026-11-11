@@ -78,7 +78,7 @@ class AppSettings:
 
 
 class ConfigManager:
-    """Manages application settings persisted in ~/.config/note-taker/settings.json."""
+    """Manages application settings persisted in ~/.config/markup-notes/settings.json."""
 
     def __init__(self, config_file: Optional[Path] = None) -> None:
         if config_file is not None:

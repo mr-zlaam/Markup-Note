@@ -578,3 +578,48 @@ def create_checkbox_icon(
 
     painter.end()
     return QIcon(pixmap)
+
+
+def create_link_icon(
+    color: str = "#8e8e93",
+    size: int = 14,
+    stroke_width: float = 1.4,
+) -> QIcon:
+    """Generate a crisp vector chain link icon at 45 degrees."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Diagonal link line
+    painter.drawLine(QPointF(4.8, 9.2), QPointF(9.2, 4.8))
+
+    # Upper-right link
+    p_up = QPainterPath()
+    p_up.moveTo(6.8, 3.2)
+    p_up.lineTo(9.5, 3.2)
+    p_up.arcTo(QRectF(7.5, 1.2, 4.5, 4.5), 90, -90)
+    p_up.lineTo(12.0, 5.5)
+    p_up.arcTo(QRectF(7.5, 3.5, 4.5, 4.5), 0, -90)
+    p_up.lineTo(10.8, 7.2)
+    painter.drawPath(p_up)
+
+    # Lower-left link
+    p_down = QPainterPath()
+    p_down.moveTo(3.2, 6.8)
+    p_down.lineTo(2.0, 6.8)
+    p_down.arcTo(QRectF(2.0, 6.0, 4.5, 4.5), 90, 90)
+    p_down.lineTo(4.5, 12.0)
+    p_down.arcTo(QRectF(2.0, 7.5, 4.5, 4.5), 0, 90)
+    p_down.lineTo(7.2, 10.8)
+    painter.drawPath(p_down)
+
+    painter.end()
+    return QIcon(pixmap)

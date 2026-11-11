@@ -140,7 +140,7 @@ class SlashItemDelegate(QStyledItemDelegate):
         else:
             icon_font = QFont(option.font)
             icon_font.setPointSize(10)
-            icon_font.setBold(True)
+            icon_font.setBold(False)
             painter.setFont(icon_font)
             painter.setPen(QColor("#0a84ff" if is_selected else "#c8c8cc"))
             painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, cmd.icon)
@@ -148,7 +148,7 @@ class SlashItemDelegate(QStyledItemDelegate):
         # Title
         title_font = QFont(option.font)
         title_font.setPointSize(10)
-        title_font.setBold(True)
+        title_font.setBold(False)
         painter.setFont(title_font)
         painter.setPen(QColor("#ffffff" if is_selected else "#f0f0f2"))
         title_rect = QRect(rect.left() + 44, rect.top() + 6, rect.width() - 52, 18)
@@ -184,7 +184,7 @@ class SlashCommandPalette(QFrame):
             QLabel#FilterHeader {
                 color: #8e8e93;
                 font-size: 11px;
-                font-weight: 600;
+                font-weight: 500;
                 padding: 6px 12px 4px 12px;
                 border-bottom: 1px solid #2c2c2e;
             }
@@ -247,10 +247,10 @@ class SlashCommandPalette(QFrame):
         self._filter_text = query.lower().strip()
         if self._filter_text:
             self.filter_label.setText(f"Filter: {self._filter_text}")
-            self.filter_label.setStyleSheet("color: #0a84ff; font-size: 11px; font-weight: 600; padding: 6px 12px 4px 12px; border-bottom: 1px solid #2c2c2e;")
+            self.filter_label.setStyleSheet("color: #0a84ff; font-size: 11px; font-weight: 500; padding: 6px 12px 4px 12px; border-bottom: 1px solid #2c2c2e;")
         else:
             self.filter_label.setText("Basic blocks")
-            self.filter_label.setStyleSheet("color: #8e8e93; font-size: 11px; font-weight: 600; padding: 6px 12px 4px 12px; border-bottom: 1px solid #2c2c2e;")
+            self.filter_label.setStyleSheet("color: #8e8e93; font-size: 11px; font-weight: 500; padding: 6px 12px 4px 12px; border-bottom: 1px solid #2c2c2e;")
 
         self.list_widget.clear()
 

@@ -1,7 +1,7 @@
 [project]
-name = "note-taker"
+name = "markup-notes"
 version = "0.1.0"
-description = "Add your description here"
+description = "A fast, modern Markdown note-taking app with Obsidian-style live preview and Notion-style editing."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

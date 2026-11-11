@@ -14,12 +14,23 @@ from typing import Optional
 if "QT_QPA_PLATFORMTHEME" not in os.environ:
     os.environ["QT_QPA_PLATFORMTHEME"] = "xdgdesktopportal"
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication
+try:
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtWidgets import QApplication
 
-from ui.main_window import MainWindow
-from ui.theme import apply_theme
+    from ui.main_window import MainWindow
+    from ui.theme import apply_theme
+except Exception as import_err:
+    try:
+        from utils.diagnostics import print_startup_error
+
+        print_startup_error(import_err, context="PyQt6 Library Loading")
+    except Exception:
+        sys.stderr.write(
+            f"\n[Markup Notes Critical Error] Failed to load Qt6: {import_err}\n"
+        )
+    sys.exit(1)
 
 
 def main() -> None:
@@ -67,4 +78,22 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as exit_err:
+        if exit_err.code not in (0, None):
+            try:
+                from utils.diagnostics import print_startup_error
+
+                print_startup_error(exit_err, context="Application Exit")
+            except Exception:
+                pass
+        raise
+    except Exception as runtime_err:
+        try:
+            from utils.diagnostics import print_startup_error
+
+            print_startup_error(runtime_err, context="Application Runtime")
+        except Exception:
+            sys.stderr.write(f"\n[Markup Notes Runtime Error] {runtime_err}\n")
+        sys.exit(1)

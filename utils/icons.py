@@ -1,8 +1,8 @@
 """Native high-DPI vector icon generation utilities for Note Taker UI."""
 
-from typing import Optional
+from typing import List, Optional, Tuple
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 
 def create_search_icon(
@@ -141,23 +141,23 @@ def create_notes_toggle_icon(
     painter.drawLine(QPointF(bar1_x, frame.top()), QPointF(bar1_x, frame.bottom()))
     painter.drawLine(QPointF(bar2_x, frame.top()), QPointF(bar2_x, frame.bottom()))
 
-    # Fill middle pane subtly
+    # Highlight middle pane (notes list) subtly
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor(color))
-    mid_rect = QRectF(bar1_x + 0.6, frame.top() + 1.0, bar2_x - bar1_x - 1.2, frame.height() - 2.0)
-    painter.drawRect(mid_rect)
+    mid_rect = QRectF(bar1_x + 1.0, frame.top() + 1.2, bar2_x - bar1_x - 1.0, frame.height() - 2.4)
+    painter.drawRoundedRect(mid_rect, 1.0, 1.0)
 
     painter.end()
     return QIcon(pixmap)
 
 
 def create_chevron_icon(
-    direction: str = "left",
+    direction: str = "right",
     color: str = "#8e8e93",
     size: int = 16,
     stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a clean vector chevron icon ('left', 'right', 'up', 'down')."""
+    """Generate a clean chevron arrow icon (left, right, up, down)."""
     pixmap = QPixmap(size * 2, size * 2)
     pixmap.setDevicePixelRatio(2.0)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -169,10 +169,10 @@ def create_chevron_icon(
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
 
-    path = QPainterPath()
     mid = float(size) / 2.0
+    path = QPainterPath()
+
     if direction == "left":
         path.moveTo(mid + 2.5, mid - 4.5)
         path.lineTo(mid - 2.5, mid)
@@ -338,6 +338,172 @@ def create_close_icon(
     inset = 4.5
     painter.drawLine(QPointF(inset, inset), QPointF(float(size) - inset, float(size) - inset))
     painter.drawLine(QPointF(float(size) - inset, inset), QPointF(inset, float(size) - inset))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+# Curated color presets for folders and notes (name, hex_code or None for default)
+PRESET_COLORS: List[Tuple[str, Optional[str]]] = [
+    ("Default", None),
+    ("Blue", "#0a84ff"),
+    ("Purple", "#bf5af2"),
+    ("Green", "#30d158"),
+    ("Yellow", "#ffd60a"),
+    ("Orange", "#ff9f0a"),
+    ("Red", "#ff453a"),
+    ("Teal", "#64d2ff"),
+    ("Pink", "#ff375f"),
+]
+
+
+def create_color_circle_icon(
+    color: Optional[str] = None,
+    size: int = 12,
+) -> QIcon:
+    """Generate a clean circular color swatch icon for menus."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    rect = QRectF(1.0, 1.0, float(size) - 2.0, float(size) - 2.0)
+    if color is None:
+        painter.setPen(QPen(QColor("#8e8e93"), 1.2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(rect)
+        painter.drawLine(
+            QPointF(rect.left() + 2.0, rect.top() + 2.0),
+            QPointF(rect.right() - 2.0, rect.bottom() - 2.0),
+        )
+    else:
+        painter.setPen(QPen(QColor(color).lighter(120), 0.8))
+        painter.setBrush(QBrush(QColor(color)))
+        painter.drawEllipse(rect)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_folder_icon(
+    color: str = "#e5a93c",
+    size: int = 16,
+) -> QIcon:
+    """Generate a crisp, native vector folder icon with custom tint."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Folder outline and tab
+    path = QPainterPath()
+    path.moveTo(2.0, 4.0)
+    path.lineTo(2.0, 12.0)
+    path.arcTo(QRectF(2.0, 10.5, 2.5, 2.5), 180, -90)
+    path.lineTo(12.5, 13.0)
+    path.arcTo(QRectF(11.5, 10.5, 2.5, 2.5), 270, -90)
+    path.lineTo(14.0, 5.5)
+    path.arcTo(QRectF(11.5, 3.5, 2.5, 2.5), 0, 90)
+    path.lineTo(7.5, 3.5)
+    path.lineTo(6.2, 2.5)
+    path.arcTo(QRectF(4.2, 2.0, 2.0, 2.0), 90, 90)
+    path.lineTo(2.0, 3.8)
+    path.closeSubpath()
+
+    painter.setPen(QPen(QColor(color), 1.25))
+    fill_col = QColor(color)
+    fill_col.setAlpha(55)
+    painter.setBrush(QBrush(fill_col))
+    painter.drawPath(path)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_all_notes_icon(
+    color: str = "#0a84ff",
+    size: int = 16,
+) -> QIcon:
+    """Generate a crisp vector icon for 'All Notes' (stacked notes tray)."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Back card
+    painter.setPen(QPen(QColor(color), 1.1))
+    fill_back = QColor(color)
+    fill_back.setAlpha(20)
+    painter.setBrush(QBrush(fill_back))
+    painter.drawRoundedRect(QRectF(4.0, 2.0, 9.5, 9.5), 2.0, 2.0)
+
+    # Front card
+    fill_front = QColor(color)
+    fill_front.setAlpha(45)
+    painter.setBrush(QBrush(fill_front))
+    painter.drawRoundedRect(QRectF(2.0, 4.5, 9.5, 9.5), 2.0, 2.0)
+
+    # Content lines on front card
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    line_pen = QPen(QColor(color), 1.0)
+    line_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(line_pen)
+    painter.drawLine(QPointF(4.0, 7.5), QPointF(9.5, 7.5))
+    painter.drawLine(QPointF(4.0, 9.8), QPointF(8.0, 9.8))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_markdown_icon(
+    color: str = "#8e8e93",
+    size: int = 14,
+) -> QIcon:
+    """Generate a crisp vector Markdown emblem (rounded box, 'M', and '↓')."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Outer rounded box
+    rect = QRectF(1.0, 2.0, 12.0, 10.0)
+    pen = QPen(QColor(color), 1.1)
+    painter.setPen(pen)
+    fill = QColor(color)
+    fill.setAlpha(25)
+    painter.setBrush(QBrush(fill))
+    painter.drawRoundedRect(rect, 2.0, 2.0)
+
+    # 'M' on left
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    m_pen = QPen(QColor(color), 1.15)
+    m_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    m_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(m_pen)
+
+    m_path = QPainterPath()
+    m_path.moveTo(2.8, 9.5)
+    m_path.lineTo(2.8, 4.5)
+    m_path.lineTo(4.8, 7.0)
+    m_path.lineTo(6.8, 4.5)
+    m_path.lineTo(6.8, 9.5)
+    painter.drawPath(m_path)
+
+    # Arrow '↓' on right
+    painter.drawLine(QPointF(10.0, 4.5), QPointF(10.0, 9.5))
+    arr_path = QPainterPath()
+    arr_path.moveTo(8.5, 7.8)
+    arr_path.lineTo(10.0, 9.5)
+    arr_path.lineTo(11.5, 7.8)
+    painter.drawPath(arr_path)
 
     painter.end()
     return QIcon(pixmap)

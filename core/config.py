@@ -32,10 +32,17 @@ class EditorConfig:
 
 
 @dataclass
+class AppearanceConfig:
+    folder_colors: Dict[str, str] = field(default_factory=dict)
+    note_colors: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class AppSettings:
     window: WindowConfig = field(default_factory=WindowConfig)
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     editor: EditorConfig = field(default_factory=EditorConfig)
+    appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AppSettings":
@@ -61,7 +68,13 @@ class AppSettings:
             auto_save_delay_ms=int(ed_data.get("auto_save_delay_ms", 400)),
         )
 
-        return cls(window=win, layout=lay, editor=ed)
+        app_data = data.get("appearance", {})
+        appearance = AppearanceConfig(
+            folder_colors=dict(app_data.get("folder_colors", {})),
+            note_colors=dict(app_data.get("note_colors", {})),
+        )
+
+        return cls(window=win, layout=lay, editor=ed, appearance=appearance)
 
 
 class ConfigManager:
@@ -146,3 +159,27 @@ class ConfigManager:
             self.settings.window.height = height
         self.settings.window.maximized = maximized
         self.save()
+
+    def set_folder_color(self, folder_name: str, color: Optional[str]) -> None:
+        """Set or remove custom color for a folder."""
+        if color:
+            self.settings.appearance.folder_colors[folder_name] = color
+        else:
+            self.settings.appearance.folder_colors.pop(folder_name, None)
+        self.save()
+
+    def get_folder_color(self, folder_name: str) -> Optional[str]:
+        """Get custom color for a folder, or None if default."""
+        return self.settings.appearance.folder_colors.get(folder_name)
+
+    def set_note_color(self, note_path_str: str, color: Optional[str]) -> None:
+        """Set or remove custom color for a note."""
+        if color:
+            self.settings.appearance.note_colors[note_path_str] = color
+        else:
+            self.settings.appearance.note_colors.pop(note_path_str, None)
+        self.save()
+
+    def get_note_color(self, note_path_str: str) -> Optional[str]:
+        """Get custom color for a note, or None if default."""
+        return self.settings.appearance.note_colors.get(note_path_str)

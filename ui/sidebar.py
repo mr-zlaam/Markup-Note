@@ -1,9 +1,10 @@
 """Sidebar widget displaying folders, navigation categories, and folder management."""
 
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -17,10 +18,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ui.dialogs import ModernInputDialog
+from ui.dialogs import ModernColorDialog, ModernInputDialog
 from utils.icons import (
+    PRESET_COLORS,
+    create_all_notes_icon,
     create_check_icon,
     create_close_icon,
+    create_color_circle_icon,
+    create_folder_icon,
     create_plus_icon,
     create_sidebar_toggle_icon,
     create_trash_icon,
@@ -42,13 +47,20 @@ class FolderSidebar(QWidget):
     delete_folder_requested = pyqtSignal(object)  # Emits Path
     delete_folders_batch_requested = pyqtSignal(list)  # Emits List[Path]
     select_all_notes_requested = pyqtSignal()
+    folder_color_changed = pyqtSignal(str, object)  # Emits (folder_name, hex_color_or_None)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
         self._folders: List[Path] = []
         self._is_selection_mode: bool = False
         self._selected_folders: Set[Path] = set()
+        self._folder_colors: Dict[str, str] = {}
         self._init_ui()
+
+    def set_folder_colors(self, colors: Dict[str, str]) -> None:
+        """Update cached folder colors and refresh UI."""
+        self._folder_colors = dict(colors)
+        self._update_folder_items()
 
     @property
     def is_selection_mode(self) -> bool:
@@ -155,6 +167,7 @@ class FolderSidebar(QWidget):
         # Folder List
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setObjectName("SidebarList")
+        self.list_widget.setIconSize(QSize(18, 18))
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.list_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         QScroller.grabGesture(self.list_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture)
@@ -240,12 +253,18 @@ class FolderSidebar(QWidget):
             return
 
         folder: Optional[Path] = item.data(Qt.ItemDataRole.UserRole)
+        folder_name = folder.name if folder is not None else "All Notes"
         menu = QMenu(self)
 
         if folder is not None:
             # Custom Folder
             rename_act = menu.addAction("Rename Folder...")
             select_act = menu.addAction("Select...")
+
+            # Color options submenu
+            color_menu = menu.addMenu("Color")
+            self._populate_color_menu(color_menu, folder_name)
+
             menu.addSeparator()
             delete_act = menu.addAction("Delete Folder")
 
@@ -259,9 +278,45 @@ class FolderSidebar(QWidget):
         else:
             # 'All Notes'
             select_act = menu.addAction("Select Notes...")
+
+            color_menu = menu.addMenu("Color")
+            self._populate_color_menu(color_menu, folder_name)
+
             action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
             if action == select_act:
                 self.select_all_notes_requested.emit()
+
+    def _populate_color_menu(self, color_menu: QMenu, folder_name: str) -> None:
+        """Populate the color submenu with color presets and custom color picker."""
+        for name, hex_code in PRESET_COLORS:
+            icon = create_color_circle_icon(hex_code, size=12)
+            act = color_menu.addAction(icon, name)
+            act.triggered.connect(
+                lambda checked=False, fn=folder_name, col=hex_code: self._apply_folder_color(fn, col)
+            )
+
+        color_menu.addSeparator()
+        custom_act = color_menu.addAction("Custom Color...")
+        custom_act.triggered.connect(
+            lambda checked=False, fn=folder_name: self._pick_custom_folder_color(fn)
+        )
+
+    def _apply_folder_color(self, folder_name: str, color: Optional[str]) -> None:
+        """Apply color to folder and emit change signal."""
+        if color:
+            self._folder_colors[folder_name] = color
+        else:
+            self._folder_colors.pop(folder_name, None)
+        self._update_folder_items()
+        self.folder_color_changed.emit(folder_name, color)
+
+    def _pick_custom_folder_color(self, folder_name: str) -> None:
+        """Open modern color dialog for custom color selection."""
+        fallback = "#0a84ff" if folder_name == "All Notes" else "#e5a93c"
+        initial = QColor(self._folder_colors.get(folder_name, fallback))
+        color = ModernColorDialog.get_color(initial, self, f"Choose Color for {folder_name}")
+        if color.isValid():
+            self._apply_folder_color(folder_name, color.name())
 
     def set_folders(self, folders: List[Path], current_selection: Optional[Path] = None) -> None:
         """Populate the sidebar with 'All Notes' and custom folders."""
@@ -276,6 +331,8 @@ class FolderSidebar(QWidget):
         # Item 0: All Notes (Root)
         all_notes_item = QListWidgetItem("All Notes")
         all_notes_item.setData(Qt.ItemDataRole.UserRole, None)
+        all_notes_color = self._folder_colors.get("All Notes") or "#0a84ff"
+        all_notes_item.setIcon(create_all_notes_icon(color=all_notes_color, size=16))
         self.list_widget.addItem(all_notes_item)
 
         selected_item = all_notes_item
@@ -289,6 +346,9 @@ class FolderSidebar(QWidget):
                     item.setIcon(create_check_icon(size=14))
                 else:
                     item.setIcon(create_uncheck_icon(size=14))
+            else:
+                folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
+                item.setIcon(create_folder_icon(color=folder_color, size=16))
 
             self.list_widget.addItem(item)
             if current_selection is not None and folder == current_selection:

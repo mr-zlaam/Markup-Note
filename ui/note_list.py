@@ -1,6 +1,6 @@
 """Note list widget displaying note cards with title, timestamp, and snippet."""
 
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from PyQt6.QtCore import QModelIndex, QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
@@ -22,9 +22,13 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
+from ui.dialogs import ModernColorDialog
 from utils.icons import (
+    PRESET_COLORS,
     create_check_icon,
     create_close_icon,
+    create_color_circle_icon,
+    create_markdown_icon,
     create_notes_toggle_icon,
     create_plus_icon,
     create_search_icon,
@@ -105,17 +109,25 @@ class NoteCardDelegate(QStyledItemDelegate):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawEllipse(circle_rect)
 
-        # 1. Draw Title
+        # 1. Draw Title with vector Markdown icon
         title_font = QFont(option.font)
         title_font.setPointSize(10)
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(QColor("#ffffff" if is_selected else "#ececec"))
 
+        # Vector Markdown emblem
+        md_color = self.panel.get_note_color(str(note.path)) or "#8e8e93"
+        md_icon = create_markdown_icon(color=md_color, size=14)
+        md_x = rect.left() + text_left_offset
+        md_y = rect.top() + 11
+        md_icon.paint(painter, md_x, md_y, 16, 14)
+
+        title_left = md_x + 20
         metrics = QFontMetrics(title_font)
-        avail_title_w = rect.width() - text_left_offset - 10
+        avail_title_w = rect.width() - (title_left - rect.left()) - 10
         elided_title = metrics.elidedText(note.title, Qt.TextElideMode.ElideRight, avail_title_w)
-        title_rect = QRect(rect.left() + text_left_offset, rect.top() + 8, avail_title_w, 20)
+        title_rect = QRect(title_left, rect.top() + 8, avail_title_w, 20)
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided_title)
 
         # 2. Draw Timestamp & Snippet line
@@ -155,13 +167,24 @@ class NoteListPanel(QWidget):
     delete_note_requested = pyqtSignal(object)  # Emits Note instance
     delete_notes_batch_requested = pyqtSignal(list)  # Emits List[Note]
     selection_mode_changed = pyqtSignal(bool)
+    note_color_changed = pyqtSignal(object, object)  # Emits (Note, hex_color_or_None)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
         self._notes: List[Note] = []
         self._is_selection_mode: bool = False
         self._selected_paths: Set[str] = set()
+        self._note_colors: Dict[str, str] = {}
         self._init_ui()
+
+    def set_note_colors(self, colors: Dict[str, str]) -> None:
+        """Update cached note colors and repaint note cards."""
+        self._note_colors = dict(colors)
+        self.list_widget.viewport().update()
+
+    def get_note_color(self, note_path_str: str) -> Optional[str]:
+        """Get custom color for note path, or None if default."""
+        return self._note_colors.get(note_path_str)
 
     @property
     def is_selection_mode(self) -> bool:
@@ -378,6 +401,11 @@ class NoteListPanel(QWidget):
         if not self._is_selection_mode:
             rename_act = menu.addAction("Rename Note...")
             select_act = menu.addAction("Select...")
+
+            # Color options submenu
+            color_menu = menu.addMenu("Color")
+            self._populate_color_menu(color_menu, note)
+
             menu.addSeparator()
             delete_act = menu.addAction("Delete Note")
 
@@ -408,6 +436,39 @@ class NoteListPanel(QWidget):
                 self._on_batch_delete_clicked()
             elif action == done_act:
                 self.exit_selection_mode()
+
+    def _populate_color_menu(self, color_menu: QMenu, note: Note) -> None:
+        """Populate the color submenu for a note."""
+        for name, hex_code in PRESET_COLORS:
+            icon = create_color_circle_icon(hex_code, size=12)
+            act = color_menu.addAction(icon, name)
+            act.triggered.connect(
+                lambda checked=False, n=note, col=hex_code: self._apply_note_color(n, col)
+            )
+
+        color_menu.addSeparator()
+        custom_act = color_menu.addAction("Custom Color...")
+        custom_act.triggered.connect(
+            lambda checked=False, n=note: self._pick_custom_note_color(n)
+        )
+
+    def _apply_note_color(self, note: Note, color: Optional[str]) -> None:
+        """Apply color to note and emit signal."""
+        path_str = str(note.path)
+        if color:
+            self._note_colors[path_str] = color
+        else:
+            self._note_colors.pop(path_str, None)
+        self.list_widget.viewport().update()
+        self.note_color_changed.emit(note, color)
+
+    def _pick_custom_note_color(self, note: Note) -> None:
+        """Open modern color dialog for custom note color."""
+        path_str = str(note.path)
+        initial = QColor(self._note_colors.get(path_str, "#8e8e93"))
+        color = ModernColorDialog.get_color(initial, self, f"Choose Color for '{note.title}'")
+        if color.isValid():
+            self._apply_note_color(note, color.name())
 
     def set_notes(
         self,

@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.sidebar.delete_folder_requested.connect(self._on_delete_folder)
         self.sidebar.delete_folders_batch_requested.connect(self._on_delete_folders_batch)
         self.sidebar.select_all_notes_requested.connect(self._on_select_all_notes_requested)
+        self.sidebar.folder_color_changed.connect(self._on_folder_color_changed)
 
         # 2. Middle: Note Cards List
         self.note_list = NoteListPanel(parent=self.splitter)
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self.note_list.rename_note_requested.connect(self._on_rename_note)
         self.note_list.delete_note_requested.connect(self._on_delete_single_note)
         self.note_list.delete_notes_batch_requested.connect(self._on_delete_notes_batch)
+        self.note_list.note_color_changed.connect(self._on_note_color_changed)
 
         # 3. Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
@@ -136,8 +138,34 @@ class MainWindow(QMainWindow):
         elif self.note_list.is_selection_mode:
             self.note_list.exit_selection_mode()
 
+    def _on_folder_color_changed(self, folder_name: str, color: Optional[str]) -> None:
+        """Persist folder color change to configuration."""
+        self.config_manager.set_folder_color(folder_name, color)
+
+    def _on_note_color_changed(self, note: Note, color: Optional[str]) -> None:
+        """Persist note color change to configuration."""
+        self.config_manager.set_note_color(str(note.path), color)
+
+    def _transfer_note_color(self, old_path_str: str, new_path_str: str) -> None:
+        """Transfer custom color when a note file is renamed."""
+        color = self.config_manager.get_note_color(old_path_str)
+        if color:
+            self.config_manager.set_note_color(old_path_str, None)
+            self.config_manager.set_note_color(new_path_str, color)
+            self.note_list.set_note_colors(self.config.appearance.note_colors)
+
+    def _transfer_folder_color(self, old_name: str, new_name: str) -> None:
+        """Transfer custom color when a folder is renamed."""
+        color = self.config_manager.get_folder_color(old_name)
+        if color:
+            self.config_manager.set_folder_color(old_name, None)
+            self.config_manager.set_folder_color(new_name, color)
+            self.sidebar.set_folder_colors(self.config.appearance.folder_colors)
+
     def _load_initial_data(self) -> None:
         """Load folders and notes on launch."""
+        self.sidebar.set_folder_colors(self.config.appearance.folder_colors)
+        self.note_list.set_note_colors(self.config.appearance.note_colors)
         folders = self.storage.get_folders()
         self.sidebar.set_folders(folders)
         self._update_watcher_paths()
@@ -254,6 +282,8 @@ class MainWindow(QMainWindow):
 
         # Rename file if title changed
         renamed_path = self.storage.rename_note_file(current_path, new_title)
+        if renamed_path != current_path:
+            self._transfer_note_color(str(current_path), str(renamed_path))
 
         # Update current note instance and card in-place without reloading editor
         self._current_note = Note.from_file(renamed_path)
@@ -276,6 +306,7 @@ class MainWindow(QMainWindow):
             is_destructive=True,
         )
         if confirmed:
+            self.config_manager.set_note_color(str(self._current_note.path), None)
             self.storage.delete_note(self._current_note.path)
             self._current_note = None
             self._refresh_notes()
@@ -292,6 +323,7 @@ class MainWindow(QMainWindow):
         if ok and new_name and new_name != folder_path.name:
             renamed_folder = self.storage.rename_folder(folder_path, new_name)
             if renamed_folder is not None:
+                self._transfer_folder_color(folder_path.name, new_name)
                 if self._current_folder == folder_path:
                     self._current_folder = renamed_folder
                 self._update_watcher_paths()
@@ -315,6 +347,7 @@ class MainWindow(QMainWindow):
             is_destructive=True,
         )
         if confirmed:
+            self.config_manager.set_folder_color(folder_path.name, None)
             self.storage.delete_folder(folder_path)
             if self._current_folder == folder_path:
                 self._current_folder = None
@@ -336,6 +369,8 @@ class MainWindow(QMainWindow):
             is_destructive=True,
         )
         if confirmed:
+            for f in folders:
+                self.config_manager.set_folder_color(f.name, None)
             self.storage.delete_folders_batch(folders)
             if self._current_folder in folders:
                 self._current_folder = None
@@ -362,6 +397,8 @@ class MainWindow(QMainWindow):
                 content = "\n".join(lines)
 
             renamed_path = self.storage.rename_note_file(note.path, new_title)
+            if renamed_path != note.path:
+                self._transfer_note_color(str(note.path), str(renamed_path))
             self.storage.save_note_content(renamed_path, content)
 
             updated_note = Note.from_file(renamed_path)
@@ -384,6 +421,7 @@ class MainWindow(QMainWindow):
             is_destructive=True,
         )
         if confirmed:
+            self.config_manager.set_note_color(str(note.path), None)
             self.storage.delete_note(note.path)
             if self._current_note and self._current_note.path == note.path:
                 self._current_note = None
@@ -404,6 +442,8 @@ class MainWindow(QMainWindow):
         )
         if confirmed:
             paths = [n.path for n in notes]
+            for n in notes:
+                self.config_manager.set_note_color(str(n.path), None)
             self.storage.delete_notes_batch(paths)
             if self._current_note and self._current_note.path in paths:
                 self._current_note = None

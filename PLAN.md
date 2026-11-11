@@ -62,6 +62,19 @@
   * **Notes Right-Click Menu:** Rename Note, Select, and Delete Note options.
   * **Batch Selection Mode:** Selecting "Select" activates batch mode with circular checkmarks (`✓` / `○`) next to each note card. Includes a dedicated batch bar with `Select All` / `Deselect All`, `Delete (X)`, and `Done` buttons, allowing users to delete notes in one go.
   * **Folder Management & Batch Deletion:** Renames folders and notes safely on disk with live file watcher updates; batch deletes selected folders and notes to `.trash`.
+* 🟢 **`[Completed]`** **Native Vector Icons & 1-Click Color Customization (`utils/icons.py`, `ui/sidebar.py`, `ui/note_list.py`):**
+  * **Vector Folder Icons:** Crisp high-DPI vector folder silhouette beside each folder in the sidebar.
+  * **Vector 'All Notes' Icon:** Crisp layered notes/tray emblem beside the root "All Notes" item.
+  * **Vector Markdown Icon:** Crisp official Markdown emblem (`M↓`) displayed beside every note title on note cards.
+  * **1-Click Color Submenu:** Right-clicking any folder or note provides a "Color" submenu with curated palette presets (Default, Blue, Purple, Green, Yellow, Orange, Red, Teal, Pink) and "Custom Color...".
+  * **ModernColorDialog (`ui/dialogs.py`):** Replaces legacy Qt dialog with an Apple Notes dark-themed modal featuring modern "Apply" and "Cancel" buttons, zero 90s icons or keyboard underscores, while preserving full 2D HSV gradient, Hue slider, HTML hex input, and RGB/HSV precision.
+  * **Dynamic Tinting:** Instantly tints the folder or Markdown icon in the chosen color.
+  * **Settings Persistence:** Color assignments persist to `~/.config/note-taker/settings.json` under `appearance.folder_colors` and `appearance.note_colors`, surviving application restarts.
+  * **Rename & Delete Safety:** Automatically transfers custom colors when folders/notes are renamed, and cleans up color mappings when items are deleted.
+* 🟢 **`[Completed]`** **Streamlined Selection Mode & Unified Cancel (`✕`) Action:**
+  * Added `Select All` / `Deselect All` to the Folders batch bar.
+  * Replaced confusing checkmarks with a dedicated `✕` (Cancel) vector button in both Folders and Notes selection bars.
+  * Pressing `Escape` anywhere in the app dismisses selection mode and restores normal browsing.
 * 🟢 **`[Completed]`** **Clean Editor Header & Premium Dialog Redesign (`ui/editor.py`, `ui/dialogs.py`):**
   * Removed the top-right "Delete" button from the editor header for a cleaner, distraction-free writing environment.
   * Completely redesigned `ModernConfirmDialog` and `ModernInputDialog` to eliminate background banding/black lines on labels, expanded to a spacious 420px width with 12px rounded borders and sleek button styles.

@@ -59,7 +59,7 @@ HTML_KBD_RE = re.compile(r"(<kbd>)(.+?)(</kbd>)", re.IGNORECASE)
 class MarkdownHighlighter(QSyntaxHighlighter):
     """Applies live rich styling and hides markdown syntax on inactive lines and blocks."""
 
-    HEADING_SIZES = {1: 28, 2: 24, 3: 20, 4: 18, 5: 16, 6: 15}
+    HEADING_SIZES = {1: 24, 2: 20, 3: 18, 4: 16, 5: 15, 6: 14}
     HEADING_COLORS = {
         1: "#ffffff",
         2: "#f5f5f7",
@@ -156,15 +156,16 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.ordered_list_format.setForeground(QColor("#0a84ff"))
         self.ordered_list_format.setFontWeight(QFont.Weight.Bold)
 
-        # Checkboxes (transparent fixed-width prefix at full line height so paintEvent draws the custom box)
+        # Checkboxes (hidden font size 1 + clean spacer so selection never reveals raw [ ] brackets)
         self.checkbox_prefix_format = QTextCharFormat()
-        self.checkbox_prefix_format.setFontFamilies(["monospace"])
-        self.checkbox_prefix_format.setFontFixedPitch(True)
-        self.checkbox_prefix_format.setFontLetterSpacingType(
-            QFont.SpacingType.PercentageSpacing
-        )
-        self.checkbox_prefix_format.setFontLetterSpacing(55.0)
+        self.checkbox_prefix_format.setFontPointSize(1)
         self.checkbox_prefix_format.setForeground(QColor(0, 0, 0, 0))
+
+        self.checkbox_spacer_format = QTextCharFormat()
+        self.checkbox_spacer_format.setFontPointSize(1)
+        self.checkbox_spacer_format.setForeground(QColor(0, 0, 0, 0))
+        self.checkbox_spacer_format.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+        self.checkbox_spacer_format.setFontLetterSpacing(20.0)
 
         # Strikethrough (~~strike~~)
         self.strike_format = QTextCharFormat()
@@ -404,6 +405,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             prefix_len = len(prefix)
             is_checked = status.lower() == "x"
             self._format(text, prefix_start, prefix_len, self.checkbox_prefix_format)
+            self._format(text, prefix_start, 1, self.checkbox_spacer_format)
 
             if is_checked:
                 text_start = prefix_start + prefix_len
@@ -426,6 +428,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 l_indent, l_prefix, l_status, _ = inner_cb.groups()
                 p_start = len(prefix) + len(l_indent)
                 self._format(text, p_start, len(l_prefix), self.checkbox_prefix_format)
+                self._format(text, p_start, 1, self.checkbox_spacer_format)
                 if l_status.lower() == "x":
                     t_start = p_start + len(l_prefix)
                     self._format(text, t_start, len(text) - t_start, self.checked_task_format)
@@ -600,7 +603,25 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.link_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if base_bold:
+                    fmt.setFontWeight(QFont.Weight.Bold)
+                else:
+                    # Check if entire link is wrapped in bold (**[link](url)**)
+                    for bm in BOLD_RE.finditer(text):
+                        if bm.start() <= g1_start and g3_end <= bm.end():
+                            fmt.setFontWeight(QFont.Weight.Bold)
+                            break
                 self._format(text, g2_start, g2_end - g2_start, fmt)
+
+                # Check if inner text has bold formatting ([**bold**](url))
+                inner_link_text = m.group(2)
+                if "**" in inner_link_text or "__" in inner_link_text:
+                    for im in BOLD_RE.finditer(inner_link_text):
+                        im_s = g2_start + im.start() + len(im.group(1))
+                        im_len = (im.end() - im.start()) - 2 * len(im.group(1))
+                        b_fmt = QTextCharFormat(fmt)
+                        b_fmt.setFontWeight(QFont.Weight.Bold)
+                        self._format(text, im_s, im_len, b_fmt)
                 syntax_fmt = self.marker_format if is_active else self.hidden_format
                 self._format(text, g1_start, g1_end - g1_start, syntax_fmt)
                 self._format(text, g3_start, g3_end - g3_start, syntax_fmt)

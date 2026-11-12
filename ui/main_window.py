@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         self.editor.create_note_with_content.connect(self._on_create_note_with_content)
         self.editor.delete_requested.connect(self._on_delete_note)
         self.editor.expand_notes_requested.connect(self._toggle_notes_list)
+        self.editor.open_file_requested.connect(self._on_open_file_dialog)
 
         # Restore layout from configuration
         folders_w = self.config.layout.folders_width if self.config.layout.folders_visible else 0
@@ -269,15 +270,31 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"{path.stem} — Markup Notes")
             return True
         except ValueError:
-            # External file outside the default notes directory
-            note = Note.from_file(path)
-            if note is None:
+            # External file outside the notes workspace -> clone and persist it into the workspace
+            external_note = Note.from_file(path)
+            if external_note is None:
                 QMessageBox.warning(self, "Read Error", f"Unable to read content from '{path.name}'.")
                 return False
 
-            self._current_note = note
-            self.editor.load_note(note)
-            self.setWindowTitle(f"{path.name} — Markup Notes")
+            # Create a new note in the active workspace and copy external content
+            imported_note = self.storage.create_note(
+                folder=self._current_folder,
+                initial_title=path.stem or "Untitled",
+            )
+            if imported_note is not None:
+                self.storage.save_note_content(imported_note.path, external_note.content)
+                reloaded = Note.from_file(imported_note.path)
+                if reloaded is not None:
+                    imported_note = reloaded
+                else:
+                    imported_note.content = external_note.content
+                self._refresh_notes(preserve_path=str(imported_note.path), emit_selection=True)
+                self.editor.load_note(imported_note)
+                self.setWindowTitle(f"{imported_note.title} — Markup Notes")
+            else:
+                self._current_note = external_note
+                self.editor.load_note(external_note)
+                self.setWindowTitle(f"{path.name} — Markup Notes")
             return True
 
     def _on_open_file_dialog(self) -> None:

@@ -157,6 +157,161 @@ class ModernInputDialog(QDialog):
         return dlg.input_field.text().strip(), accepted
 
 
+class ModernLinkDialog(QDialog):
+    """A sleek, modern dark-themed modal dialog for inserting or editing markdown links."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        initial_text: str = "",
+        initial_url: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Insert Link")
+        self.setFixedWidth(420)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #202024;
+                color: #f0f0f0;
+                border: 1px solid #36363c;
+                border-radius: 12px;
+            }
+            QLabel {
+                background-color: transparent !important;
+                background: transparent !important;
+                border: none !important;
+            }
+            QLabel#TitleLabel {
+                font-size: 16px;
+                font-weight: 600;
+                color: #ffffff;
+            }
+            QLabel#FieldLabel {
+                font-size: 12px;
+                font-weight: 500;
+                color: #9c9ca4;
+            }
+            QLineEdit#ModernInput {
+                background-color: #161619;
+                border: 1px solid #383840;
+                border-radius: 7px;
+                padding: 8px 12px;
+                color: #ffffff;
+                font-size: 13px;
+                selection-background-color: #0a84ff;
+            }
+            QLineEdit#ModernInput:focus {
+                border: 1px solid #0a84ff;
+                background-color: #1a1a1e;
+            }
+            QPushButton#PrimaryBtn {
+                background-color: #0a84ff;
+                color: #ffffff;
+                font-weight: 600;
+                border: none;
+                border-radius: 7px;
+                padding: 8px 20px;
+                font-size: 13px;
+            }
+            QPushButton#PrimaryBtn:hover {
+                background-color: #0071e3;
+            }
+            QPushButton#SecondaryBtn {
+                background-color: #2c2c32;
+                color: #d6d6dc;
+                border: 1px solid #3a3a42;
+                border-radius: 7px;
+                padding: 8px 18px;
+                font-size: 13px;
+            }
+            QPushButton#SecondaryBtn:hover {
+                background-color: #383840;
+                color: #ffffff;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(12)
+
+        # Title
+        title_lbl = QLabel("Insert Link", parent=self)
+        title_lbl.setObjectName("TitleLabel")
+        layout.addWidget(title_lbl)
+
+        # Field 1: Text
+        text_lbl = QLabel("Text", parent=self)
+        text_lbl.setObjectName("FieldLabel")
+        layout.addWidget(text_lbl)
+
+        self.text_input = QLineEdit(parent=self)
+        self.text_input.setObjectName("ModernInput")
+        self.text_input.setPlaceholderText("Link title or label")
+        self.text_input.setText(initial_text)
+        self.text_input.returnPressed.connect(self._on_enter_pressed)
+        layout.addWidget(self.text_input)
+
+        # Field 2: Link URL
+        url_lbl = QLabel("Link", parent=self)
+        url_lbl.setObjectName("FieldLabel")
+        layout.addWidget(url_lbl)
+
+        self.url_input = QLineEdit(parent=self)
+        self.url_input.setObjectName("ModernInput")
+        self.url_input.setPlaceholderText("https://example.com")
+        self.url_input.setText(initial_url)
+        self.url_input.returnPressed.connect(self._on_enter_pressed)
+        layout.addWidget(self.url_input)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel", parent=self)
+        self.cancel_btn.setObjectName("SecondaryBtn")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.ok_btn = QPushButton("Insert", parent=self)
+        self.ok_btn.setObjectName("PrimaryBtn")
+        self.ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.ok_btn)
+
+        layout.addLayout(btn_layout)
+
+        # Smart focus management
+        if initial_text:
+            self.url_input.setFocus()
+            if initial_url:
+                self.url_input.selectAll()
+        else:
+            self.text_input.setFocus()
+
+    def _on_enter_pressed(self) -> None:
+        """Advance to URL field if text was filled on enter, otherwise accept."""
+        if self.sender() is self.text_input and not self.url_input.text().strip():
+            self.url_input.setFocus()
+        else:
+            self.accept()
+
+    @classmethod
+    def get_link_data(
+        cls,
+        parent: Optional[QWidget],
+        initial_text: str = "",
+        initial_url: str = "",
+    ) -> Tuple[str, str, bool]:
+        """Launch modern link modal and return (text, url, accepted)."""
+        dlg = cls(parent=parent, initial_text=initial_text, initial_url=initial_url)
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        if not accepted:
+            return ("", "", False)
+        return dlg.text_input.text().strip(), dlg.url_input.text().strip(), True
+
+
 class ModernConfirmDialog(QDialog):
     """A sleek, modern dark-themed confirmation dialog replacing QMessageBox."""
 

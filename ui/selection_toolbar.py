@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from utils.icons import (
     create_bullet_list_icon,
+    create_checkbox_icon,
     create_link_icon,
     create_number_list_icon,
 )
@@ -141,6 +142,15 @@ class SelectionFormatToolbar(QFrame):
         self.number_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.number_btn.clicked.connect(lambda: self.format_requested.emit("number"))
         layout.addWidget(self.number_btn)
+
+        # 7. Checkbox Task Button
+        self.todo_btn = QPushButton(parent=self)
+        self.todo_btn.setObjectName("FormatBtn")
+        self.todo_btn.setToolTip("To-Do Checkbox (- [ ])")
+        self.todo_btn.setIcon(create_checkbox_icon(color="#0a84ff", box_color="#d0d0d4", size=14))
+        self.todo_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.todo_btn.clicked.connect(lambda: self.format_requested.emit("todo"))
+        layout.addWidget(self.todo_btn)
 
         # Divider 2
         divider2 = QFrame(parent=self)

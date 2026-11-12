@@ -41,13 +41,19 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
+from ui.dialogs import ModernLinkDialog
 from ui.find_replace import FindReplaceBar
 from ui.highlighter import HR_RE, HTML_KBD_RE, LIST_RE, QUOTE_RE, MarkdownHighlighter
 from ui.selection_toolbar import SelectionFormatToolbar
 from ui.slash_menu import SlashCommand, SlashCommandPalette
 from utils.exporter import export_note_to_html, export_note_to_pdf
 from utils.touch import TouchScrollTracker, is_touch_event
-from utils.icons import create_export_icon, create_notes_toggle_icon, create_sidebar_toggle_icon
+from utils.icons import (
+    create_export_icon,
+    create_notes_toggle_icon,
+    create_open_file_icon,
+    create_sidebar_toggle_icon,
+)
 from utils.code_engine import (
     CodeRegion,
     get_code_content_width,
@@ -287,26 +293,59 @@ class MarkdownEditor(QTextEdit):
         elif format_type == "code":
             prefix, suffix = "`", "`"
         elif format_type == "link":
-            cursor.beginEditBlock()
-            if text.startswith("[") and "](" in text and text.endswith(")"):
-                inner = text[1:text.index("](")]
-                cursor.insertText(inner)
-                new_cursor = self.textCursor()
-                new_cursor.setPosition(start)
-                new_cursor.setPosition(start + len(inner), QTextCursor.MoveMode.KeepAnchor)
-                self.setTextCursor(new_cursor)
+            struct_match = re.match(
+                r"^(\s*(?:>+\s*)*(?:[-*+]\s*\[[ xX]?\]\s*|[-*+]\s+|\d+\.\s+|#{1,6}\s+))(.*)$",
+                text,
+            )
+            lead_prefix = struct_match.group(1) if struct_match else ""
+            core_text = struct_match.group(2) if struct_match else text
+
+            # Check if selection is already a markdown link [Text](URL)
+            existing_match = re.match(r"^\[(.*?)\]\((.*?)\)$", core_text.strip())
+            if existing_match:
+                init_text = existing_match.group(1)
+                init_url = existing_match.group(2)
             else:
-                formatted = f"[{text}](https://)"
-                cursor.insertText(formatted)
-                new_cursor = self.textCursor()
-                new_cursor.setPosition(start)
-                new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
-                self.setTextCursor(new_cursor)
+                init_text = core_text
+                init_url = ""
+                cb = QApplication.clipboard().text().strip()
+                if cb.startswith(("http://", "https://", "mailto:")) and "\n" not in cb:
+                    init_url = cb
+
+            # Temporarily hide floating toolbar while modal dialog is open
+            if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+                self.format_toolbar.hide()
+
+            link_text, link_url, accepted = ModernLinkDialog.get_link_data(
+                self, initial_text=init_text, initial_url=init_url
+            )
+            if not accepted:
+                return
+
+            if not link_text and not link_url:
+                return
+
+            if not link_text:
+                link_text = link_url
+
+            if link_url:
+                if not link_url.startswith(("http://", "https://", "mailto:", "file:", "#", "/", "./", "../")):
+                    link_url = "https://" + link_url
+                formatted = f"{lead_prefix}[{link_text}]({link_url})"
+            else:
+                formatted = f"{lead_prefix}{link_text}"
+
+            cursor.beginEditBlock()
+            cursor.insertText(formatted)
+            new_cursor = self.textCursor()
+            new_cursor.setPosition(start)
+            new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(new_cursor)
             cursor.endEditBlock()
             self.viewport().update()
             self._show_format_toolbar()
             return
-        elif format_type in ("bullet", "number"):
+        elif format_type in ("bullet", "number", "todo", "checkbox"):
             cursor.beginEditBlock()
             b_start = self.document().findBlock(start)
             b_end = self.document().findBlock(end)
@@ -322,9 +361,13 @@ class MarkdownEditor(QTextEdit):
                 curr = curr.next()
 
             non_empty_blocks = [b for b in blocks if b.text().strip()]
-            if format_type == "bullet":
+            if format_type in ("todo", "checkbox"):
                 all_formatted = bool(non_empty_blocks) and all(
-                    re.match(r"^\s*[-*+]\s+", b.text()) for b in non_empty_blocks
+                    re.match(r"^\s*[-*+]\s*\[[ xX]?\]\s*", b.text()) for b in non_empty_blocks
+                )
+            elif format_type == "bullet":
+                all_formatted = bool(non_empty_blocks) and all(
+                    re.match(r"^\s*[-*+]\s+(?!\[[ xX]?\])", b.text()) for b in non_empty_blocks
                 )
             else:
                 all_formatted = bool(non_empty_blocks) and all(
@@ -344,7 +387,9 @@ class MarkdownEditor(QTextEdit):
                 if all_formatted:
                     new_line = indent + content_clean
                 else:
-                    if format_type == "bullet":
+                    if format_type in ("todo", "checkbox"):
+                        new_line = indent + "- [ ] " + content_clean
+                    elif format_type == "bullet":
                         new_line = indent + "- " + content_clean
                     else:
                         fwd_idx = non_empty_blocks.index(b) + 1
@@ -370,43 +415,55 @@ class MarkdownEditor(QTextEdit):
 
         cursor.beginEditBlock()
 
-        # 1. Check if selection itself is already wrapped in prefix/suffix
-        if text.startswith(prefix) and text.endswith(suffix) and len(text) >= len(prefix) + len(suffix):
-            unwrapped = text[len(prefix):-len(suffix)]
-            cursor.insertText(unwrapped)
+        # Intelligently protect structural prefixes (- [ ] , - [x] , - , 1. , > , # )
+        struct_match = re.match(
+            r"^(\s*(?:>+\s*)*(?:[-*+]\s*\[[ xX]?\]\s*|[-*+]\s+|\d+\.\s+|#{1,6}\s+))(.*)$",
+            text,
+        )
+        lead_prefix = struct_match.group(1) if struct_match else ""
+        core_text = struct_match.group(2) if struct_match else text
+
+        p_len = len(prefix)
+        s_len = len(suffix)
+
+        # 1. Check if core_text itself is already wrapped in prefix/suffix
+        if core_text.startswith(prefix) and core_text.endswith(suffix) and len(core_text) >= p_len + s_len:
+            unwrapped = core_text[p_len:-s_len]
+            formatted = f"{lead_prefix}{unwrapped}"
+            cursor.insertText(formatted)
             new_cursor = self.textCursor()
             new_cursor.setPosition(start)
-            new_cursor.setPosition(start + len(unwrapped), QTextCursor.MoveMode.KeepAnchor)
+            new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
             self.setTextCursor(new_cursor)
         else:
             # 2. Check if surrounding characters in document are already prefix/suffix
             doc_text = self.document().toPlainText()
-            p_len = len(prefix)
-            s_len = len(suffix)
             has_surrounding = False
-            if start >= p_len and end + s_len <= len(doc_text):
-                if doc_text[start - p_len:start] == prefix and doc_text[end:end + s_len] == suffix:
+            core_start = start + len(lead_prefix)
+            core_end = end
+            if core_start >= p_len and core_end + s_len <= len(doc_text):
+                if doc_text[core_start - p_len:core_start] == prefix and doc_text[core_end:core_end + s_len] == suffix:
                     has_surrounding = True
 
             if has_surrounding:
                 del_cursor = QTextCursor(self.document())
-                del_cursor.setPosition(end)
-                del_cursor.setPosition(end + s_len, QTextCursor.MoveMode.KeepAnchor)
+                del_cursor.setPosition(core_end)
+                del_cursor.setPosition(core_end + s_len, QTextCursor.MoveMode.KeepAnchor)
                 del_cursor.removeSelectedText()
-                del_cursor.setPosition(start - p_len)
-                del_cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
+                del_cursor.setPosition(core_start - p_len)
+                del_cursor.setPosition(core_start, QTextCursor.MoveMode.KeepAnchor)
                 del_cursor.removeSelectedText()
 
                 new_cursor = self.textCursor()
-                new_cursor.setPosition(start - p_len)
-                new_cursor.setPosition(end - p_len, QTextCursor.MoveMode.KeepAnchor)
+                new_cursor.setPosition(core_start - p_len)
+                new_cursor.setPosition(core_end - p_len, QTextCursor.MoveMode.KeepAnchor)
                 self.setTextCursor(new_cursor)
             else:
-                wrapped = f"{prefix}{text}{suffix}"
-                cursor.insertText(wrapped)
+                formatted = f"{lead_prefix}{prefix}{core_text}{suffix}"
+                cursor.insertText(formatted)
                 new_cursor = self.textCursor()
                 new_cursor.setPosition(start)
-                new_cursor.setPosition(start + len(wrapped), QTextCursor.MoveMode.KeepAnchor)
+                new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
                 self.setTextCursor(new_cursor)
 
         cursor.endEditBlock()
@@ -1717,13 +1774,25 @@ class MarkdownEditor(QTextEdit):
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
 
-        # In-note Find (Ctrl+F) and Replace (Ctrl+H)
+        # In-note Find (Ctrl+F), Replace (Ctrl+H), and formatting shortcuts
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.key() == Qt.Key.Key_F:
                 self.find_requested.emit(False)
                 return
             elif event.key() == Qt.Key.Key_H:
                 self.find_requested.emit(True)
+                return
+            elif event.key() == Qt.Key.Key_K:
+                self._apply_text_format("link")
+                return
+            elif event.key() == Qt.Key.Key_B:
+                self._apply_text_format("bold")
+                return
+            elif event.key() == Qt.Key.Key_I:
+                self._apply_text_format("italic")
+                return
+            elif event.key() == Qt.Key.Key_U:
+                self._apply_text_format("underline")
                 return
 
         # Up arrow at the very top of document: jump up to NoteTitleEdit
@@ -2090,6 +2159,7 @@ class EditorPanel(QWidget):
     create_note_with_content = pyqtSignal(str)  # Emitted when user types on empty canvas
     delete_requested = pyqtSignal()
     expand_notes_requested = pyqtSignal()
+    open_file_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -2138,6 +2208,15 @@ class EditorPanel(QWidget):
         self.word_count_label = QLabel("0 words", parent=self)
         self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 6px;")
         header.addWidget(self.word_count_label)
+
+        # Open Markdown File Button
+        self.open_file_btn = QPushButton(parent=self)
+        self.open_file_btn.setObjectName("IconButton")
+        self.open_file_btn.setIcon(create_open_file_icon("#8e8e93", size=15))
+        self.open_file_btn.setToolTip("Open Markdown File (Ctrl+O)")
+        self.open_file_btn.setFixedSize(26, 26)
+        self.open_file_btn.clicked.connect(self.open_file_requested.emit)
+        header.addWidget(self.open_file_btn)
 
         # Export Note Button (PDF / HTML / Markdown)
         self.export_btn = QPushButton(parent=self)

@@ -197,6 +197,42 @@ class TestTouchpadAndCheckboxHover(unittest.TestCase):
         self.editor.mousePressEvent(press_event)
         self.assertFalse(self.editor._touch_tracker.is_active)
 
+    def test_selection_format_bold_preserves_checkbox_prefix(self) -> None:
+        """Verify that bolding a checkbox line wraps only the content, never the - [ ] prefix."""
+        self.editor.setPlainText("- [ ] Buy groceries")
+        c = self.editor.textCursor()
+        c.select(QTextCursor.SelectionType.BlockUnderCursor)
+        self.editor.setTextCursor(c)
+
+        self.editor._apply_text_format("bold")
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ] **Buy groceries**")
+
+    def test_selection_format_todo_converts_line_to_checkbox(self) -> None:
+        """Verify that applying todo/checkbox format transforms the whole line into a checkbox."""
+        self.editor.setPlainText("Prepare presentation slides")
+        c = self.editor.textCursor()
+        c.setPosition(0)
+        c.setPosition(7, QTextCursor.MoveMode.KeepAnchor)  # Select "Prepare"
+        self.editor.setTextCursor(c)
+
+        self.editor._apply_text_format("todo")
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ] Prepare presentation slides")
+
+        # Toggling again should convert back to plain text
+        self.editor._apply_text_format("todo")
+        self.assertEqual(self.editor.toPlainText().strip(), "Prepare presentation slides")
+
+    def test_heading_sizes_reduced_by_one_step(self) -> None:
+        """Verify that heading sizes are dropped by 1 step for sleek proportional layout."""
+        from ui.highlighter import MarkdownHighlighter
+
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[1], 24)
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[2], 20)
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[3], 18)
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[4], 16)
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[5], 15)
+        self.assertEqual(MarkdownHighlighter.HEADING_SIZES[6], 14)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -731,6 +731,52 @@ def create_export_icon(
     return QIcon(pixmap)
 
 
+def create_open_file_icon(
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.35,
+) -> QIcon:
+    """Generate a crisp vector open-file / open-folder icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+
+    # Back flap of folder with tab
+    back_folder = QPainterPath()
+    back_folder.moveTo(2.5, 4.0)
+    back_folder.lineTo(5.5, 4.0)
+    back_folder.lineTo(7.0, 5.5)
+    back_folder.lineTo(13.5, 5.5)
+    back_folder.lineTo(13.5, 12.5)
+    back_folder.lineTo(2.5, 12.5)
+    back_folder.closeSubpath()
+    painter.drawPath(back_folder)
+
+    # Front open flap (perspective trapezoid)
+    front_flap = QPainterPath()
+    front_flap.moveTo(1.5, 12.5)
+    front_flap.lineTo(3.5, 7.5)
+    front_flap.lineTo(14.5, 7.5)
+    front_flap.lineTo(12.5, 12.5)
+    front_flap.closeSubpath()
+
+    fill_col = QColor(color)
+    fill_col.setAlpha(35)
+    painter.setBrush(QBrush(fill_col))
+    painter.drawPath(front_flap)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path]:
     """Ensure crisp high-DPI vector chevron PNGs exist for QTreeWidget branch styling."""
     assets_dir = (

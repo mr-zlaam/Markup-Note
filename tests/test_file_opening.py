@@ -89,16 +89,17 @@ def test_main_window_open_file() -> None:
         success = window.open_file_or_folder(ext_doc)
         assert success is True, "Failed to open external markdown file"
         assert window._current_note is not None
-        assert window._current_note.title == "external_spec"
+        assert window._current_note.title.startswith("external_spec") or window._current_note.title == "External Document"
         assert "Content from external path." in window.editor.editor.toPlainText()
 
         # Simulate editing and saving
         window.editor.editor.setPlainText("# External Document\n\nUpdated external content.")
         window._on_content_saved("# External Document\n\nUpdated external content.")
 
-        # Verify saved back to external file
-        saved_disk_content = ext_doc.read_text(encoding="utf-8")
+        # Verify persisted into workspace note
+        saved_disk_content = window._current_note.path.read_text(encoding="utf-8")
         assert "Updated external content." in saved_disk_content
+        assert window._current_note.path.is_relative_to(window.storage.root_dir)
 
         # Test opening directory as workspace
         workspace_dir = tmp_path / "my_custom_vault"

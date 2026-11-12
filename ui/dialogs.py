@@ -125,11 +125,13 @@ class ModernInputDialog(QDialog):
 
         self.cancel_btn = QPushButton("Cancel", parent=self)
         self.cancel_btn.setObjectName("SecondaryBtn")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
         self.ok_btn = QPushButton(confirm_text, parent=self)
         self.ok_btn.setObjectName("PrimaryBtn")
+        self.ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ok_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.ok_btn)
 
@@ -272,11 +274,13 @@ class ModernLinkDialog(QDialog):
 
         self.cancel_btn = QPushButton("Cancel", parent=self)
         self.cancel_btn.setObjectName("SecondaryBtn")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
         self.ok_btn = QPushButton("Insert", parent=self)
         self.ok_btn.setObjectName("PrimaryBtn")
+        self.ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ok_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.ok_btn)
 
@@ -401,11 +405,13 @@ class ModernConfirmDialog(QDialog):
 
         self.cancel_btn = QPushButton("Cancel", parent=self)
         self.cancel_btn.setObjectName("SecondaryBtn")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
         self.confirm_btn = QPushButton(confirm_text, parent=self)
         self.confirm_btn.setObjectName("ConfirmBtn")
+        self.confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.confirm_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.confirm_btn)
 
@@ -468,6 +474,7 @@ class ModernColorDialog(QColorDialog):
         for btn in self.findChildren(QPushButton):
             btn.setIcon(QIcon())
             btn.setIconSize(QSize(0, 0))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             txt = btn.text().replace("&", "")
             btn.setText(txt)
             if btn.objectName() not in ("ModernPrimaryBtn", "ModernCancelBtn"):
@@ -654,11 +661,13 @@ class ModernMessageDialog(QDialog):
         if cancel_text:
             cancel_btn = QPushButton(cancel_text, parent=self)
             cancel_btn.setObjectName("SecondaryBtn")
+            cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             cancel_btn.clicked.connect(self.reject)
             btn_layout.addWidget(cancel_btn)
 
         confirm_btn = QPushButton(confirm_text, parent=self)
         confirm_btn.setObjectName("ErrorPrimaryBtn" if is_error and not cancel_text else "PrimaryBtn")
+        confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         confirm_btn.clicked.connect(self.accept)
         btn_layout.addWidget(confirm_btn)
 
@@ -845,24 +854,28 @@ class ModernExportDialog(QDialog):
         self.btn_pdf.setObjectName("FormatTabBtn")
         self.btn_pdf.setCheckable(True)
         self.btn_pdf.setChecked(True)
+        self.btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_pdf.clicked.connect(lambda: self._set_format("pdf"))
         fmt_layout.addWidget(self.btn_pdf)
 
         self.btn_html_dark = QPushButton("HTML (Dark)", parent=self)
         self.btn_html_dark.setObjectName("FormatTabBtn")
         self.btn_html_dark.setCheckable(True)
+        self.btn_html_dark.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_html_dark.clicked.connect(lambda: self._set_format("html_dark"))
         fmt_layout.addWidget(self.btn_html_dark)
 
         self.btn_html_light = QPushButton("HTML (Light)", parent=self)
         self.btn_html_light.setObjectName("FormatTabBtn")
         self.btn_html_light.setCheckable(True)
+        self.btn_html_light.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_html_light.clicked.connect(lambda: self._set_format("html_light"))
         fmt_layout.addWidget(self.btn_html_light)
 
         self.btn_md = QPushButton("Markdown", parent=self)
         self.btn_md.setObjectName("FormatTabBtn")
         self.btn_md.setCheckable(True)
+        self.btn_md.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_md.clicked.connect(lambda: self._set_format("md"))
         fmt_layout.addWidget(self.btn_md)
 
@@ -889,24 +902,28 @@ class ModernExportDialog(QDialog):
         self.btn_chip_docs = QPushButton("Documents", parent=self)
         self.btn_chip_docs.setObjectName("FolderChipBtn")
         self.btn_chip_docs.setCheckable(True)
+        self.btn_chip_docs.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_chip_docs.clicked.connect(lambda: self._set_dest_dir(Path.home() / "Documents"))
         loc_row.addWidget(self.btn_chip_docs)
 
         self.btn_chip_down = QPushButton("Downloads", parent=self)
         self.btn_chip_down.setObjectName("FolderChipBtn")
         self.btn_chip_down.setCheckable(True)
+        self.btn_chip_down.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_chip_down.clicked.connect(lambda: self._set_dest_dir(Path.home() / "Downloads"))
         loc_row.addWidget(self.btn_chip_down)
 
         self.btn_chip_desk = QPushButton("Desktop", parent=self)
         self.btn_chip_desk.setObjectName("FolderChipBtn")
         self.btn_chip_desk.setCheckable(True)
+        self.btn_chip_desk.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_chip_desk.clicked.connect(lambda: self._set_dest_dir(Path.home() / "Desktop"))
         loc_row.addWidget(self.btn_chip_desk)
 
         self.btn_browse = QPushButton("Browse Other...", parent=self)
         self.btn_browse.setObjectName("FolderChipBtn")
         self.btn_browse.setCheckable(True)
+        self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse.clicked.connect(self._browse_custom_dir)
         loc_row.addWidget(self.btn_browse)
 
@@ -926,11 +943,13 @@ class ModernExportDialog(QDialog):
 
         cancel_btn = QPushButton("Cancel", parent=self)
         cancel_btn.setObjectName("CancelExportBtn")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
         self.export_action_btn = QPushButton("Export Note", parent=self)
         self.export_action_btn.setObjectName("PrimaryExportBtn")
+        self.export_action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.export_action_btn.clicked.connect(self._do_export)
         btn_layout.addWidget(self.export_action_btn)
 

@@ -220,6 +220,7 @@ class NoteListPanel(QWidget):
         self.toggle_folders_btn.setIcon(create_sidebar_toggle_icon("#8e8e93", size=15))
         self.toggle_folders_btn.setToolTip("Toggle Folders (Ctrl+\\)")
         self.toggle_folders_btn.setFixedSize(26, 26)
+        self.toggle_folders_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_folders_btn.clicked.connect(self.toggle_folders_requested.emit)
         top_bar.addWidget(self.toggle_folders_btn)
 
@@ -239,6 +240,7 @@ class NoteListPanel(QWidget):
         self.new_note_btn.setObjectName("ActionBtn")
         self.new_note_btn.setIcon(create_plus_icon("#ffffff", size=12))
         self.new_note_btn.setToolTip("Create new note (Ctrl+N)")
+        self.new_note_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.new_note_btn.clicked.connect(self.create_note_requested.emit)
         top_bar.addWidget(self.new_note_btn)
 
@@ -248,6 +250,7 @@ class NoteListPanel(QWidget):
         self.collapse_notes_btn.setIcon(create_notes_toggle_icon("#8e8e93", size=15))
         self.collapse_notes_btn.setToolTip("Collapse Notes List")
         self.collapse_notes_btn.setFixedSize(26, 26)
+        self.collapse_notes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.collapse_notes_btn.clicked.connect(self.collapse_notes_requested.emit)
         top_bar.addWidget(self.collapse_notes_btn)
 
@@ -279,6 +282,7 @@ class NoteListPanel(QWidget):
                 color: #ffffff;
             }
         """)
+        self.select_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.select_all_btn.clicked.connect(self._on_toggle_select_all)
         batch_layout.addWidget(self.select_all_btn)
 
@@ -290,6 +294,7 @@ class NoteListPanel(QWidget):
         self.batch_delete_btn.setIcon(create_trash_icon("#e03e3e", size=16))
         self.batch_delete_btn.setFixedSize(28, 28)
         self.batch_delete_btn.setToolTip("Delete selected notes")
+        self.batch_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.batch_delete_btn.setEnabled(False)
         self.batch_delete_btn.clicked.connect(self._on_batch_delete_clicked)
         batch_layout.addWidget(self.batch_delete_btn)
@@ -300,6 +305,7 @@ class NoteListPanel(QWidget):
         self.cancel_btn.setIcon(create_close_icon("#8e8e93", size=15))
         self.cancel_btn.setFixedSize(28, 28)
         self.cancel_btn.setToolTip("Cancel selection (Esc)")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.exit_selection_mode)
         batch_layout.addWidget(self.cancel_btn)
 

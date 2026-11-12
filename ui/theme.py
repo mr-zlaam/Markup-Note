@@ -283,7 +283,10 @@ QFileDialog QPushButton:hover {
 
 def apply_theme(app) -> None:
     """Apply the application-wide dark styling and ensure assets."""
+    from utils.cursors import install_global_button_cursor_filter
     from utils.icons import ensure_chevron_assets
+
+    install_global_button_cursor_filter(app)
     themed_qss = DARK_THEME_QSS
     try:
         right_path, down_path = ensure_chevron_assets()

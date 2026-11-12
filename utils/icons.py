@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from PyQt6.QtCore import QPointF, QRect, QRectF, QSize, Qt
+from PyQt6.QtCore import QByteArray, QPointF, QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 
 
 def create_search_icon(
@@ -777,6 +778,170 @@ def create_open_file_icon(
     fill_col.setAlpha(35)
     painter.setBrush(QBrush(fill_col))
     painter.drawPath(front_flap)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_backup_icon(
+    color: str = "#8e8e93",
+    size: int = 16,
+    has_dot: bool = False,
+    dot_color: str = "#0a84ff",
+) -> QIcon:
+    """Generate a crisp vector cloud backup icon with optional pending changes badge."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    s = size / 24.0
+    painter.scale(s, s)
+
+    pen = QPen(QColor(color), 1.85)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Cloud outline on 24x24 canvas
+    cloud = QPainterPath()
+    cloud.moveTo(6.5, 18.0)
+    cloud.lineTo(4.5, 18.0)
+    cloud.arcTo(QRectF(1.0, 12.0, 6.0, 6.0), 270, -140)
+    cloud.arcTo(QRectF(3.5, 7.0, 8.0, 8.0), 190, -120)
+    cloud.arcTo(QRectF(9.5, 5.0, 9.0, 9.0), 160, -150)
+    cloud.arcTo(QRectF(17.0, 11.0, 6.0, 6.0), 90, -140)
+    cloud.lineTo(17.5, 18.0)
+    cloud.lineTo(6.5, 18.0)
+    painter.drawPath(cloud)
+
+    # Arrow inside pointing up
+    arrow = QPainterPath()
+    arrow.moveTo(12.0, 16.5)
+    arrow.lineTo(12.0, 10.5)
+    arrow.moveTo(9.5, 13.0)
+    arrow.lineTo(12.0, 10.5)
+    arrow.lineTo(14.5, 13.0)
+    painter.drawPath(arrow)
+
+    if has_dot:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(dot_color)))
+        painter.drawEllipse(QRectF(18.0, 3.0, 5.0, 5.0))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_github_icon(color: str = "#ffffff", size: int = 16) -> QIcon:
+    """Generate a high-precision vector icon of the official GitHub Invertocat logo."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    svg_data = f"""<svg viewBox="0 0 24 24" fill="{color}" xmlns="http://www.w3.org/2000/svg">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+    </svg>"""
+
+    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+
+    return QIcon(pixmap)
+
+
+def create_sync_icon(color: str = "#ffffff", size: int = 16, stroke_width: float = 1.45) -> QIcon:
+    """Generate a clean dual-arrow rotating sync icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    s = size / 24.0
+    painter.scale(s, s)
+
+    pen = QPen(QColor(color), stroke_width / s)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Top-right arc & arrow
+    p_top = QPainterPath()
+    p_top.arcTo(QRectF(3.0, 3.0, 18.0, 18.0), 45, 140)
+    painter.drawPath(p_top)
+
+    arr_top = QPainterPath()
+    arr_top.moveTo(17.5, 4.0)
+    arr_top.lineTo(21.0, 7.5)
+    arr_top.lineTo(16.5, 9.0)
+    painter.drawPath(arr_top)
+
+    # Bottom-left arc & arrow
+    p_bot = QPainterPath()
+    p_bot.arcTo(QRectF(3.0, 3.0, 18.0, 18.0), 225, 140)
+    painter.drawPath(p_bot)
+
+    arr_bot = QPainterPath()
+    arr_bot.moveTo(6.5, 20.0)
+    arr_bot.lineTo(3.0, 16.5)
+    arr_bot.lineTo(7.5, 15.0)
+    painter.drawPath(arr_bot)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_history_icon(color: str = "#8e8e93", size: int = 14, stroke_width: float = 1.35) -> QIcon:
+    """Generate a clean vector clock history / timeline icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Outer circle
+    center = size / 2.0
+    radius = center - 2.0
+    painter.drawEllipse(QPointF(center, center), radius, radius)
+
+    # Clock hands (12:00 and 3:00)
+    painter.drawLine(QPointF(center, center), QPointF(center, center - radius * 0.6))
+    painter.drawLine(QPointF(center, center), QPointF(center + radius * 0.5, center))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def create_diff_icon(color: str = "#8e8e93", size: int = 14, stroke_width: float = 1.35) -> QIcon:
+    """Generate a clean vector comparison / diff icon."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Left and right vertical columns
+    painter.drawRoundedRect(QRectF(1.5, 1.5, 4.5, size - 3.0), 1.5, 1.5)
+    painter.drawRoundedRect(QRectF(size - 6.0, 1.5, 4.5, size - 3.0), 1.5, 1.5)
 
     painter.end()
     return QIcon(pixmap)

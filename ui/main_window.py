@@ -7,11 +7,12 @@ from typing import List, Optional, Union
 
 from PyQt6.QtCore import QEasingCurve, QFileSystemWatcher, QTimer, QVariantAnimation, Qt
 from PyQt6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QSplitter, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox, QSplitter, QWidget
 
 from core.config import ConfigManager
 from core.note import Note
 from core.storage import StorageManager
+from ui.backup_panel import BackupPanel
 from ui.dialogs import ModernConfirmDialog, ModernInputDialog, ModernMessageDialog
 from ui.editor import EditorPanel
 from ui.note_list import NoteListPanel
@@ -71,6 +72,12 @@ class MainWindow(QMainWindow):
         self._load_initial_data()
 
     def _init_ui(self) -> None:
+        from utils.cursors import install_global_button_cursor_filter
+
+        app = QApplication.instance()
+        if app is not None and isinstance(app, QApplication):
+            install_global_button_cursor_filter(app)
+
         self.splitter = QSplitter(Qt.Orientation.Horizontal, parent=self)
         self.splitter.setChildrenCollapsible(True)
 
@@ -97,7 +104,7 @@ class MainWindow(QMainWindow):
         self.note_list.delete_notes_batch_requested.connect(self._on_delete_notes_batch)
         self.note_list.note_color_changed.connect(self._on_note_color_changed)
 
-        # 3. Right: Editor Canvas
+        # 3. Middle-Right: Editor Canvas
         self.editor = EditorPanel(parent=self.splitter)
         self.editor.content_saved.connect(self._on_content_saved)
         self.editor.title_changed.connect(self._on_note_title_changed)
@@ -105,6 +112,13 @@ class MainWindow(QMainWindow):
         self.editor.delete_requested.connect(self._on_delete_note)
         self.editor.expand_notes_requested.connect(self._toggle_notes_list)
         self.editor.open_file_requested.connect(self._on_open_file_dialog)
+        self.editor.backup_requested.connect(self.toggle_backup_panel)
+
+        # 4. Far Right: Backup & Version History Panel
+        self.backup_panel = BackupPanel(storage_manager=self.storage, parent=self.splitter)
+        self.backup_panel.close_requested.connect(self.toggle_backup_panel)
+        self.backup_panel.changes_updated.connect(self.editor.set_backup_changes_count)
+        self.backup_panel.note_reverted.connect(self._on_note_reverted)
 
         # Restore layout from configuration
         folders_w = self.config.layout.folders_width if self.config.layout.folders_visible else 0
@@ -112,7 +126,7 @@ class MainWindow(QMainWindow):
         total_w = self.config.window.width
         editor_w = max(300, total_w - folders_w - notes_w)
 
-        self.splitter.setSizes([folders_w, notes_w, editor_w])
+        self.splitter.setSizes([folders_w, notes_w, editor_w, 0])
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
         self._update_panel_buttons()
 
@@ -127,6 +141,14 @@ class MainWindow(QMainWindow):
         # Open Markdown File (Ctrl+O)
         open_file_sc = QShortcut(QKeySequence("Ctrl+O"), self)
         open_file_sc.activated.connect(self._on_open_file_dialog)
+
+        # Toggle Cloud Backup Panel (Ctrl+Shift+B)
+        backup_sc = QShortcut(QKeySequence("Ctrl+Shift+B"), self)
+        backup_sc.activated.connect(self.toggle_backup_panel)
+
+        # Quick Cloud Sync (Ctrl+Shift+S)
+        sync_sc = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+        sync_sc.activated.connect(self._on_quick_sync)
 
         # Open Notes Folder (Ctrl+Shift+O)
         open_folder_sc = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
@@ -468,6 +490,7 @@ class MainWindow(QMainWindow):
             self.editor.update_meta(self._current_note)
             self.note_list.update_note_card(str(current_path), self._current_note)
             self._all_current_notes = self.storage.list_notes(self._current_folder)
+            self.backup_panel.refresh_status()
 
         QTimer.singleShot(500, self._clear_saving_flag)
 
@@ -753,21 +776,23 @@ class MainWindow(QMainWindow):
 
         def _on_step(val: object) -> None:
             curr_w = int(val)
+            backup_w = self.splitter.sizes()[3] if len(self.splitter.sizes()) > 3 else 0
             if pane_index == 0:
-                editor_w = max(100, total_w - curr_w - other_w)
-                self.splitter.setSizes([curr_w, other_w, editor_w])
+                editor_w = max(100, total_w - curr_w - other_w - backup_w)
+                self.splitter.setSizes([curr_w, other_w, editor_w, backup_w])
             else:
-                editor_w = max(100, total_w - other_w - curr_w)
-                self.splitter.setSizes([other_w, curr_w, editor_w])
+                editor_w = max(100, total_w - other_w - curr_w - backup_w)
+                self.splitter.setSizes([other_w, curr_w, editor_w, backup_w])
 
         def _on_finish() -> None:
             self._active_pane_anim = None
+            backup_w = self.splitter.sizes()[3] if len(self.splitter.sizes()) > 3 else 0
             if pane_index == 0:
-                editor_w = max(100, total_w - target_w - other_w)
-                self.splitter.setSizes([target_w, other_w, editor_w])
+                editor_w = max(100, total_w - target_w - other_w - backup_w)
+                self.splitter.setSizes([target_w, other_w, editor_w, backup_w])
             else:
-                editor_w = max(100, total_w - other_w - target_w)
-                self.splitter.setSizes([other_w, target_w, editor_w])
+                editor_w = max(100, total_w - other_w - target_w - backup_w)
+                self.splitter.setSizes([other_w, target_w, editor_w, backup_w])
 
             self._update_panel_buttons()
             self.config_manager.save()
@@ -810,6 +835,37 @@ class MainWindow(QMainWindow):
                 restore_w = 280
             self.config.layout.notes_list_visible = True
             self._animate_splitter_pane(pane_index=1, target_w=restore_w)
+
+    def toggle_backup_panel(self) -> None:
+        """Toggle right-side Backup & Version History panel."""
+        sizes = list(self.splitter.sizes())
+        if len(sizes) < 4:
+            return
+
+        folders_w, notes_w, editor_w, backup_w = sizes
+        if backup_w > 20:
+            # Collapse backup panel
+            new_editor_w = editor_w + backup_w
+            self.splitter.setSizes([folders_w, notes_w, new_editor_w, 0])
+        else:
+            # Expand backup panel to 320px
+            target_w = 320
+            new_editor_w = max(200, editor_w - target_w)
+            self.splitter.setSizes([folders_w, notes_w, new_editor_w, target_w])
+            self.backup_panel.refresh_status()
+
+    def _on_quick_sync(self) -> None:
+        """Execute quick cloud sync (Ctrl+Shift+S)."""
+        self.backup_panel.trigger_sync()
+
+    def _on_note_reverted(self, rel_path: str) -> None:
+        """Handle note reverted event from backup panel."""
+        reverted_file = self.storage.root_dir / rel_path
+        if self._current_note and self._current_note.path == reverted_file:
+            reloaded = Note.from_file(reverted_file)
+            if reloaded:
+                self.editor.load_note(reloaded)
+        self._refresh_notes(preserve_path=str(reverted_file) if reverted_file.exists() else None)
 
     def flush_pending_save(self) -> None:
         """Flush any unsaved debounced editor changes immediately."""

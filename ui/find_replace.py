@@ -162,6 +162,7 @@ class FindReplaceBar(QFrame):
         self.toggle_replace_btn.setToolTip("Toggle Replace Mode (Ctrl+H)")
         self.toggle_replace_btn.setIcon(create_chevron_icon("right", color="#8e8e94", size=14))
         self.toggle_replace_btn.setFixedSize(22, 22)
+        self.toggle_replace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_replace_btn.clicked.connect(self.toggle_replace_row)
         row1.addWidget(self.toggle_replace_btn)
 
@@ -188,6 +189,7 @@ class FindReplaceBar(QFrame):
         self.case_btn.setCheckable(True)
         self.case_btn.setToolTip("Match Case (Alt+C)")
         self.case_btn.setFixedSize(26, 22)
+        self.case_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.case_btn.toggled.connect(self._on_search_text_changed)
         row1.addWidget(self.case_btn)
 
@@ -197,6 +199,7 @@ class FindReplaceBar(QFrame):
         self.word_btn.setCheckable(True)
         self.word_btn.setToolTip("Match Whole Word (Alt+W)")
         self.word_btn.setFixedSize(26, 22)
+        self.word_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.word_btn.toggled.connect(self._on_search_text_changed)
         row1.addWidget(self.word_btn)
 
@@ -206,6 +209,7 @@ class FindReplaceBar(QFrame):
         self.prev_btn.setToolTip("Previous Match (Shift+Enter)")
         self.prev_btn.setIcon(create_chevron_icon("up", color="#8e8e94", size=14))
         self.prev_btn.setFixedSize(22, 22)
+        self.prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.prev_btn.clicked.connect(self.find_prev_requested.emit)
         row1.addWidget(self.prev_btn)
 
@@ -215,6 +219,7 @@ class FindReplaceBar(QFrame):
         self.next_btn.setToolTip("Next Match (Enter)")
         self.next_btn.setIcon(create_chevron_icon("down", color="#8e8e94", size=14))
         self.next_btn.setFixedSize(22, 22)
+        self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.next_btn.clicked.connect(self.find_next_requested.emit)
         row1.addWidget(self.next_btn)
 
@@ -224,6 +229,7 @@ class FindReplaceBar(QFrame):
         self.close_btn.setToolTip("Close (Escape)")
         self.close_btn.setIcon(create_close_icon(color="#8e8e94", size=14))
         self.close_btn.setFixedSize(22, 22)
+        self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.clicked.connect(self.closed.emit)
         row1.addWidget(self.close_btn)
 
@@ -256,6 +262,7 @@ class FindReplaceBar(QFrame):
         self.replace_btn = QPushButton("Replace", parent=self.replace_widget)
         self.replace_btn.setObjectName("SearchActionBtn")
         self.replace_btn.setToolTip("Replace Current Match (Enter)")
+        self.replace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.replace_btn.clicked.connect(self._emit_replace_current)
         row2.addWidget(self.replace_btn)
 
@@ -263,6 +270,7 @@ class FindReplaceBar(QFrame):
         self.replace_all_btn = QPushButton("Replace All", parent=self.replace_widget)
         self.replace_all_btn.setObjectName("SearchActionBtn")
         self.replace_all_btn.setToolTip("Replace All Occurrences")
+        self.replace_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.replace_all_btn.clicked.connect(self._emit_replace_all)
         row2.addWidget(self.replace_all_btn)
 

@@ -100,6 +100,7 @@ class FolderSidebar(QWidget):
         self.add_folder_btn.setIcon(create_plus_icon("#8e8e93", size=14))
         self.add_folder_btn.setToolTip("New Folder (Ctrl+Shift+N)")
         self.add_folder_btn.setFixedSize(26, 26)
+        self.add_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_folder_btn.clicked.connect(self._on_add_folder_clicked)
         header_layout.addWidget(self.add_folder_btn)
 
@@ -109,6 +110,7 @@ class FolderSidebar(QWidget):
         self.collapse_btn.setIcon(create_sidebar_toggle_icon("#8e8e93", size=15))
         self.collapse_btn.setToolTip("Collapse Folders (Ctrl+\\)")
         self.collapse_btn.setFixedSize(26, 26)
+        self.collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.collapse_btn.clicked.connect(self.collapse_requested.emit)
         header_layout.addWidget(self.collapse_btn)
 
@@ -141,6 +143,7 @@ class FolderSidebar(QWidget):
             }
         """)
         self.select_all_btn.setToolTip("Select or deselect all folders")
+        self.select_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.select_all_btn.clicked.connect(self._on_toggle_select_all)
         batch_layout.addWidget(self.select_all_btn)
 
@@ -152,6 +155,7 @@ class FolderSidebar(QWidget):
         self.batch_delete_btn.setIcon(create_trash_icon("#e03e3e", size=15))
         self.batch_delete_btn.setFixedSize(24, 24)
         self.batch_delete_btn.setToolTip("Delete selected folders")
+        self.batch_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.batch_delete_btn.setEnabled(False)
         self.batch_delete_btn.clicked.connect(self._on_batch_delete_clicked)
         batch_layout.addWidget(self.batch_delete_btn)
@@ -162,6 +166,7 @@ class FolderSidebar(QWidget):
         self.cancel_btn.setIcon(create_close_icon("#8e8e93", size=15))
         self.cancel_btn.setFixedSize(24, 24)
         self.cancel_btn.setToolTip("Cancel selection (Esc)")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.exit_selection_mode)
         batch_layout.addWidget(self.cancel_btn)
 

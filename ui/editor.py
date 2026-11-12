@@ -49,6 +49,7 @@ from ui.slash_menu import SlashCommand, SlashCommandPalette
 from utils.exporter import export_note_to_html, export_note_to_pdf
 from utils.touch import TouchScrollTracker, is_touch_event
 from utils.icons import (
+    create_backup_icon,
     create_export_icon,
     create_notes_toggle_icon,
     create_open_file_icon,
@@ -1145,9 +1146,12 @@ class MarkdownEditor(QTextEdit):
         rect = self.cursorRect(c)
         box_x = float(rect.left() + 3)
         box_y = float(rect.top()) + (rect.height() - 14.0) / 2.0
-        hit_rect = QRectF(box_x - 4.0, box_y - 4.0, 22.0, 22.0)
+        min_x = max(0.0, box_x - 8.0)
+        max_x = box_x + 22.0
+        min_y = box_y - 6.0
+        max_y = box_y + 20.0
 
-        if hit_rect.contains(pos):
+        if min_x <= pos.x() <= max_x and min_y <= pos.y() <= max_y:
             return block
         return None
 
@@ -2160,6 +2164,7 @@ class EditorPanel(QWidget):
     delete_requested = pyqtSignal()
     expand_notes_requested = pyqtSignal()
     open_file_requested = pyqtSignal()
+    backup_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
@@ -2195,6 +2200,7 @@ class EditorPanel(QWidget):
         self.expand_notes_btn.setIcon(create_notes_toggle_icon("#8e8e93", size=15))
         self.expand_notes_btn.setToolTip("Show Notes List")
         self.expand_notes_btn.setFixedSize(26, 26)
+        self.expand_notes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.expand_notes_btn.setVisible(False)
         self.expand_notes_btn.clicked.connect(self.expand_notes_requested.emit)
         header.addWidget(self.expand_notes_btn)
@@ -2209,12 +2215,23 @@ class EditorPanel(QWidget):
         self.word_count_label.setStyleSheet("color: #7a7a7a; font-size: 11px; padding-right: 6px;")
         header.addWidget(self.word_count_label)
 
+        # Cloud Backup & Sync Button
+        self.backup_btn = QPushButton(parent=self)
+        self.backup_btn.setObjectName("IconButton")
+        self.backup_btn.setIcon(create_backup_icon("#8e8e93", size=15))
+        self.backup_btn.setToolTip("Cloud Backup & Version History (Ctrl+Shift+B)")
+        self.backup_btn.setFixedSize(26, 26)
+        self.backup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.backup_btn.clicked.connect(self.backup_requested.emit)
+        header.addWidget(self.backup_btn)
+
         # Open Markdown File Button
         self.open_file_btn = QPushButton(parent=self)
         self.open_file_btn.setObjectName("IconButton")
         self.open_file_btn.setIcon(create_open_file_icon("#8e8e93", size=15))
         self.open_file_btn.setToolTip("Open Markdown File (Ctrl+O)")
         self.open_file_btn.setFixedSize(26, 26)
+        self.open_file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_file_btn.clicked.connect(self.open_file_requested.emit)
         header.addWidget(self.open_file_btn)
 
@@ -2224,6 +2241,7 @@ class EditorPanel(QWidget):
         self.export_btn.setIcon(create_export_icon("#8e8e93", size=15))
         self.export_btn.setToolTip("Export Note (Ctrl+E)")
         self.export_btn.setFixedSize(26, 26)
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._show_export_menu)
         header.addWidget(self.export_btn)
@@ -2494,6 +2512,18 @@ class EditorPanel(QWidget):
             self.title_edit.blockSignals(True)
             self.title_edit.setText(note.title)
             self.title_edit.blockSignals(False)
+
+    def set_backup_changes_count(self, count: int) -> None:
+        """Update the top-right cloud backup icon with a pending changes indicator."""
+        has_changes = count > 0
+        color = "#e5a93c" if has_changes else "#8e8e93"
+        self.backup_btn.setIcon(create_backup_icon(color, size=15, has_dot=has_changes))
+        tip = (
+            f"Cloud Backup & Version History ({count} unsynced changes)"
+            if has_changes
+            else "Cloud Backup & Version History (Ctrl+Shift+B)"
+        )
+        self.backup_btn.setToolTip(tip)
 
     def get_title(self) -> str:
         """Return the current title edit text."""

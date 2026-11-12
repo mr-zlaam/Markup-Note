@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import QApplication, QDialog
 
 from ui.dialogs import ModernLinkDialog
 from ui.editor import EditorPanel, MarkdownEditor
-from utils.icons import create_open_file_icon
+from utils.icons import create_link_icon, create_open_file_icon
 
 
 class TestLinkDialogAndHeaderOpen(unittest.TestCase):
@@ -33,6 +33,14 @@ class TestLinkDialogAndHeaderOpen(unittest.TestCase):
         self.assertFalse(icon.isNull())
         sizes = icon.availableSizes()
         self.assertTrue(len(sizes) > 0 or not icon.pixmap(16, 16).isNull())
+
+    def test_link_icon_generation(self) -> None:
+        """Verify vector link chain icon generates a non-null QIcon with valid pixmap."""
+        icon = create_link_icon(color="#d0d0d4", size=14)
+        self.assertFalse(icon.isNull())
+        pix = icon.pixmap(14, 14)
+        self.assertFalse(pix.isNull())
+        self.assertEqual(pix.width(), 14)
 
     def test_editor_panel_has_open_file_button(self) -> None:
         """Verify EditorPanel top right header contains the open file button with signal."""

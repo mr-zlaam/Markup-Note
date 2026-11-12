@@ -587,9 +587,9 @@ def create_checkbox_icon(
 def create_link_icon(
     color: str = "#8e8e93",
     size: int = 14,
-    stroke_width: float = 1.4,
+    stroke_width: float = 1.35,
 ) -> QIcon:
-    """Generate a crisp vector chain link icon at 45 degrees."""
+    """Generate a crisp, modern vector chain link icon at 45 degrees."""
     pixmap = QPixmap(size * 2, size * 2)
     pixmap.setDevicePixelRatio(2.0)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -597,33 +597,38 @@ def create_link_icon(
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    pen = QPen(QColor(color), stroke_width)
+    # Scale canonical 24x24 Lucide-style chain link to target size
+    scale = size / 24.0
+    painter.translate(size / 2.0, size / 2.0)
+    painter.rotate(-45)
+    painter.scale(scale, scale)
+    painter.translate(-12.0, -12.0)
+
+    # Adjust stroke inversely so rendered line width stays crisp and true to pixel size
+    pen = QPen(QColor(color), stroke_width / scale)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
 
-    # Diagonal link line
-    painter.drawLine(QPointF(4.8, 9.2), QPointF(9.2, 4.8))
+    # Left loop
+    p_left = QPainterPath()
+    p_left.moveTo(9.5, 17.0)
+    p_left.lineTo(7.0, 17.0)
+    p_left.arcTo(QRectF(2.0, 7.0, 10.0, 10.0), 270, -180)
+    p_left.lineTo(9.5, 7.0)
+    painter.drawPath(p_left)
 
-    # Upper-right link
-    p_up = QPainterPath()
-    p_up.moveTo(6.8, 3.2)
-    p_up.lineTo(9.5, 3.2)
-    p_up.arcTo(QRectF(7.5, 1.2, 4.5, 4.5), 90, -90)
-    p_up.lineTo(12.0, 5.5)
-    p_up.arcTo(QRectF(7.5, 3.5, 4.5, 4.5), 0, -90)
-    p_up.lineTo(10.8, 7.2)
-    painter.drawPath(p_up)
+    # Right loop
+    p_right = QPainterPath()
+    p_right.moveTo(14.5, 7.0)
+    p_right.lineTo(17.0, 7.0)
+    p_right.arcTo(QRectF(12.0, 7.0, 10.0, 10.0), 90, -180)
+    p_right.lineTo(14.5, 17.0)
+    painter.drawPath(p_right)
 
-    # Lower-left link
-    p_down = QPainterPath()
-    p_down.moveTo(3.2, 6.8)
-    p_down.lineTo(2.0, 6.8)
-    p_down.arcTo(QRectF(2.0, 6.0, 4.5, 4.5), 90, 90)
-    p_down.lineTo(4.5, 12.0)
-    p_down.arcTo(QRectF(2.0, 7.5, 4.5, 4.5), 0, 90)
-    p_down.lineTo(7.2, 10.8)
-    painter.drawPath(p_down)
+    # Center connecting bar
+    painter.drawLine(QPointF(8.0, 12.0), QPointF(16.0, 12.0))
 
     painter.end()
     return QIcon(pixmap)

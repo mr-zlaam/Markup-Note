@@ -161,7 +161,7 @@ class SelectionFormatToolbar(QFrame):
         # 7. Link Button
         self.link_btn = QPushButton(parent=self)
         self.link_btn.setObjectName("FormatBtn")
-        self.link_btn.setToolTip("Link ([text](url))")
+        self.link_btn.setToolTip("Insert Link (Ctrl+K)")
         self.link_btn.setIcon(create_link_icon(color="#d0d0d4", size=14))
         self.link_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.link_btn.clicked.connect(lambda: self.format_requested.emit("link"))

@@ -1,78 +1,78 @@
-name: Build Universal Linux AppImage
+# name: Build Universal Linux AppImage
 
-on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+# on:
+#   push:
+#     branches:
+#       - main
+#     tags:
+#       - 'v*'
+#   pull_request:
+#     branches:
+#       - main
+#   workflow_dispatch:
 
-jobs:
-  build:
-    name: Build Universal AppImage (glibc 2.35)
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+# jobs:
+#   build:
+#     name: Build Universal AppImage (glibc 2.35)
+#     runs-on: ubuntu-22.04
+#     steps:
+#       - name: Check out repository
+#         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+#           cache: 'pip'
 
-      - name: Install system build dependencies & extract appimagetool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-0 \
-            libgl1-mesa-dev \
-            libxkbcommon-x11-0 \
-            libfuse2 \
-            wget \
-            file \
-            binutils
+#       - name: Install system build dependencies & extract appimagetool
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y \
+#             libglib2.0-0 \
+#             libgl1-mesa-dev \
+#             libxkbcommon-x11-0 \
+#             libfuse2 \
+#             wget \
+#             file \
+#             binutils
 
-          # Extract appimagetool to bypass FUSE requirements in CI environments
-          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool.AppImage
-          chmod +x /tmp/appimagetool.AppImage
-          cd /tmp && /tmp/appimagetool.AppImage --appimage-extract
-          sudo mv /tmp/squashfs-root /usr/local/lib/appimagetool
-          sudo ln -sf /usr/local/lib/appimagetool/AppRun /usr/local/bin/appimagetool
-          appimagetool --version
+#           # Extract appimagetool to bypass FUSE requirements in CI environments
+#           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool.AppImage
+#           chmod +x /tmp/appimagetool.AppImage
+#           cd /tmp && /tmp/appimagetool.AppImage --appimage-extract
+#           sudo mv /tmp/squashfs-root /usr/local/lib/appimagetool
+#           sudo ln -sf /usr/local/lib/appimagetool/AppRun /usr/local/bin/appimagetool
+#           appimagetool --version
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pyinstaller
+#       - name: Install Python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -e .
+#           pip install pyinstaller
 
-      - name: Compile and Package AppImage
-        run: |
-          bash scripts/build_appimage.sh
+#       - name: Compile and Package AppImage
+#         run: |
+#           bash scripts/build_appimage.sh
 
-      - name: Verify AppImage Execution
-        run: |
-          QT_QPA_PLATFORM=offscreen timeout 4s ./MarkupNotes-x86_64.AppImage --appimage-extract-and-run || [ $? -eq 124 ]
+#       - name: Verify AppImage Execution
+#         run: |
+#           QT_QPA_PLATFORM=offscreen timeout 4s ./MarkupNotes-x86_64.AppImage --appimage-extract-and-run || [ $? -eq 124 ]
 
-      - name: Upload AppImage Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MarkupNotes-x86_64.AppImage
-          path: MarkupNotes-x86_64.AppImage
-          if-no-files-found: error
+#       - name: Upload AppImage Artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: MarkupNotes-x86_64.AppImage
+#           path: MarkupNotes-x86_64.AppImage
+#           if-no-files-found: error
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: MarkupNotes-x86_64.AppImage
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       - name: Create GitHub Release
+#         if: startsWith(github.ref, 'refs/tags/v')
+#         uses: softprops/action-gh-release@v2
+#         with:
+#           files: MarkupNotes-x86_64.AppImage
+#           name: Release ${{ github.ref_name }}
+#           draft: false
+#           prerelease: false
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import QModelIndex, QRectF, QSize, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QRectF, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.config import ConfigManager
 from core.git_manager import GitCommit, GitManager, GitStatus
 from core.github_client import GitHubClient
 from core.storage import StorageManager
@@ -30,6 +32,34 @@ from utils.icons import (
     create_markdown_icon,
     create_sync_icon,
 )
+
+
+class ToggleSwitch(QCheckBox):
+    """Modern iOS / macOS style pill toggle switch."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent=parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(34, 18)
+        self.setText("")
+
+    def hitButton(self, pos) -> bool:
+        return self.rect().contains(pos)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        is_on = self.isChecked()
+        track_color = QColor("#30d158") if is_on else QColor("#3a3a40")
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(0, 1, 34, 16, 8, 8)
+
+        thumb_x = 19 if is_on else 3
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(thumb_x, 3, 12, 12)
+        painter.end()
 
 
 class ChangeItemDelegate(QStyledItemDelegate):
@@ -183,19 +213,31 @@ class BackupPanel(QWidget):
     def __init__(
         self,
         storage_manager: StorageManager,
+        config_manager: Optional[ConfigManager] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent=parent)
         self.storage = storage_manager
+        self.config_manager = config_manager
         self.git_manager = GitManager(self.storage.root_dir)
         self.github_client = GitHubClient()
         self._sync_thread: Optional[SyncWorker] = None
+
+        self._auto_backup_timer = QTimer(self)
+        self._auto_backup_timer.setSingleShot(True)
+        self._auto_backup_timer.setInterval(2500)
+        self._auto_backup_timer.timeout.connect(self._on_auto_backup_timer_fired)
 
         self.setObjectName("BackupPanel")
         self.setMinimumWidth(280)
         self.setMaximumWidth(400)
 
         self._init_ui()
+
+        if self.config_manager:
+            self.toggle_auto_backup.setChecked(self.config_manager.get_auto_backup())
+        self.toggle_auto_backup.toggled.connect(self._on_auto_backup_toggled)
+
         self.refresh_status()
 
     def _init_ui(self) -> None:
@@ -390,6 +432,40 @@ class BackupPanel(QWidget):
         status_row.addStretch()
         sync_vbox.addLayout(status_row)
         layout.addLayout(sync_vbox)
+
+        # 3b. Auto-Backup Toggle Card
+        auto_card = QWidget(parent=self)
+        auto_card.setObjectName("AutoBackupCard")
+        auto_card.setStyleSheet("""
+            QWidget#AutoBackupCard {
+                background-color: #242428;
+                border: 1px solid #2e2e34;
+                border-radius: 8px;
+            }
+        """)
+        auto_layout = QHBoxLayout(auto_card)
+        auto_layout.setContentsMargins(10, 7, 10, 7)
+        auto_layout.setSpacing(8)
+
+        auto_vbox = QVBoxLayout()
+        auto_vbox.setSpacing(1)
+        self.lbl_auto_title = QLabel("Automatic Backup", parent=auto_card)
+        self.lbl_auto_title.setStyleSheet("color: #ececec; font-size: 11px; font-weight: 600;")
+        auto_vbox.addWidget(self.lbl_auto_title)
+
+        self.lbl_auto_subtitle = QLabel("Auto-sync to GitHub on edit", parent=auto_card)
+        self.lbl_auto_subtitle.setStyleSheet("color: #7a7a82; font-size: 10px;")
+        auto_vbox.addWidget(self.lbl_auto_subtitle)
+        auto_layout.addLayout(auto_vbox)
+
+        auto_layout.addStretch()
+
+        self.toggle_auto_backup = ToggleSwitch(parent=auto_card)
+        self.toggle_auto_backup.setToolTip("Automatically sync and push changes to GitHub when notes are edited")
+        self.toggle_auto_backup.setCursor(Qt.CursorShape.PointingHandCursor)
+        auto_layout.addWidget(self.toggle_auto_backup)
+
+        layout.addWidget(auto_card)
 
         # Separator line 1
         div1 = QLabel(parent=self)
@@ -595,3 +671,36 @@ class BackupPanel(QWidget):
             self.sync_dot.setStyleSheet("color: #ff453a; font-size: 8px;")
             self.lbl_sync_status.setText(f"Sync failed: {message}")
             self.lbl_sync_status.setStyleSheet("color: #ff453a; font-size: 10px;")
+
+    def is_auto_backup_enabled(self) -> bool:
+        """Check if automatic backup on edit is active."""
+        return self.toggle_auto_backup.isChecked()
+
+    def _on_auto_backup_toggled(self, enabled: bool) -> None:
+        """Handle user toggling automatic backup."""
+        if self.config_manager:
+            self.config_manager.set_auto_backup(enabled)
+        if enabled:
+            status = self.git_manager.get_status()
+            if not status.is_clean or status.ahead > 0:
+                self.schedule_auto_backup()
+        else:
+            self._auto_backup_timer.stop()
+
+    def schedule_auto_backup(self) -> None:
+        """Schedule debounced background sync (2.5s) if automatic backup is enabled."""
+        if not self.toggle_auto_backup.isChecked():
+            return
+        if not self.git_manager.is_repo():
+            return
+        self._auto_backup_timer.start(2500)
+
+    def _on_auto_backup_timer_fired(self) -> None:
+        """Debounced auto-backup timer expired; trigger sync if dirty or ahead."""
+        if not self.toggle_auto_backup.isChecked():
+            return
+        if not self.git_manager.is_repo():
+            return
+        status = self.git_manager.get_status()
+        if not status.is_clean or status.ahead > 0:
+            self.trigger_sync()

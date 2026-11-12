@@ -120,6 +120,7 @@ class TestButtonCursors(unittest.TestCase):
             self.assertEqual(panel.account_action_btn.cursor().shape(), Qt.CursorShape.PointingHandCursor)
             self.assertEqual(panel.btn_sync.cursor().shape(), Qt.CursorShape.PointingHandCursor)
             self.assertEqual(panel.btn_backup_all.cursor().shape(), Qt.CursorShape.PointingHandCursor)
+            self.assertEqual(panel.toggle_auto_backup.cursor().shape(), Qt.CursorShape.PointingHandCursor)
 
     def test_dialog_buttons_cursor(self) -> None:
         """Verify all modal dialog buttons have PointingHandCursor."""

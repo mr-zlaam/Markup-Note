@@ -38,11 +38,17 @@ class AppearanceConfig:
 
 
 @dataclass
+class BackupConfig:
+    auto_backup: bool = False
+
+
+@dataclass
 class AppSettings:
     window: WindowConfig = field(default_factory=WindowConfig)
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     editor: EditorConfig = field(default_factory=EditorConfig)
     appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
+    backup: BackupConfig = field(default_factory=BackupConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AppSettings":
@@ -74,7 +80,12 @@ class AppSettings:
             note_colors=dict(app_data.get("note_colors", {})),
         )
 
-        return cls(window=win, layout=lay, editor=ed, appearance=appearance)
+        bak_data = data.get("backup", {})
+        backup = BackupConfig(
+            auto_backup=bool(bak_data.get("auto_backup", False)),
+        )
+
+        return cls(window=win, layout=lay, editor=ed, appearance=appearance, backup=backup)
 
 
 class ConfigManager:
@@ -183,3 +194,12 @@ class ConfigManager:
     def get_note_color(self, note_path_str: str) -> Optional[str]:
         """Get custom color for a note, or None if default."""
         return self.settings.appearance.note_colors.get(note_path_str)
+
+    def set_auto_backup(self, enabled: bool) -> None:
+        """Update and save automatic backup setting."""
+        self.settings.backup.auto_backup = enabled
+        self.save()
+
+    def get_auto_backup(self) -> bool:
+        """Get automatic backup setting."""
+        return self.settings.backup.auto_backup

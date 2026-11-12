@@ -115,7 +115,11 @@ class MainWindow(QMainWindow):
         self.editor.backup_requested.connect(self.toggle_backup_panel)
 
         # 4. Far Right: Backup & Version History Panel
-        self.backup_panel = BackupPanel(storage_manager=self.storage, parent=self.splitter)
+        self.backup_panel = BackupPanel(
+            storage_manager=self.storage,
+            config_manager=self.config_manager,
+            parent=self.splitter,
+        )
         self.backup_panel.close_requested.connect(self.toggle_backup_panel)
         self.backup_panel.changes_updated.connect(self.editor.set_backup_changes_count)
         self.backup_panel.note_reverted.connect(self._on_note_reverted)
@@ -460,6 +464,8 @@ class MainWindow(QMainWindow):
             self._refresh_notes(preserve_path=str(new_note.path), emit_selection=True)
             self.editor.title_edit.setFocus()
             self.editor.title_edit.selectAll()
+            self.backup_panel.refresh_status()
+            self.backup_panel.schedule_auto_backup()
         QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_create_note_with_content(self, initial_content: str) -> None:
@@ -472,6 +478,8 @@ class MainWindow(QMainWindow):
             if self._current_note is not None:
                 self.editor.update_meta(self._current_note)
                 self._refresh_notes(preserve_path=str(new_note.path), emit_selection=False)
+                self.backup_panel.refresh_status()
+                self.backup_panel.schedule_auto_backup()
         QTimer.singleShot(500, self._clear_saving_flag)
 
     def _on_content_saved(self, new_content: str) -> None:
@@ -492,6 +500,7 @@ class MainWindow(QMainWindow):
             self.note_list.update_note_card(str(current_path), self._current_note)
             self._all_current_notes = self.storage.list_notes(self._current_folder)
             self.backup_panel.refresh_status()
+            self.backup_panel.schedule_auto_backup()
 
         QTimer.singleShot(500, self._clear_saving_flag)
 
@@ -517,6 +526,8 @@ class MainWindow(QMainWindow):
                 self.editor.update_meta(self._current_note)
                 self.note_list.update_note_card(str(current_path), self._current_note)
                 self._all_current_notes = self.storage.list_notes(self._current_folder)
+                self.backup_panel.refresh_status()
+                self.backup_panel.schedule_auto_backup()
 
         QTimer.singleShot(500, self._clear_saving_flag)
 
@@ -536,6 +547,8 @@ class MainWindow(QMainWindow):
             self.storage.delete_note(self._current_note.path)
             self._current_note = None
             self._refresh_notes()
+            self.backup_panel.refresh_status()
+            self.backup_panel.schedule_auto_backup()
 
     def _on_rename_folder(self, folder_path: Path) -> None:
         """Rename an existing folder."""
@@ -650,6 +663,8 @@ class MainWindow(QMainWindow):
                     self.editor.load_note(updated_note)
                 self.note_list.update_note_card(str(note.path), updated_note)
                 self._refresh_notes(preserve_path=str(renamed_path), emit_selection=False)
+                self.backup_panel.refresh_status()
+                self.backup_panel.schedule_auto_backup()
 
             QTimer.singleShot(500, self._clear_saving_flag)
 
@@ -669,6 +684,8 @@ class MainWindow(QMainWindow):
                 self._current_note = None
                 self.editor.load_note(None)
             self._refresh_notes()
+            self.backup_panel.refresh_status()
+            self.backup_panel.schedule_auto_backup()
 
     def _on_delete_notes_batch(self, notes: List[Note]) -> None:
         """Delete multiple notes in one batch from selection mode."""
@@ -692,6 +709,8 @@ class MainWindow(QMainWindow):
                 self.editor.load_note(None)
             self.note_list.exit_selection_mode()
             self._refresh_notes()
+            self.backup_panel.refresh_status()
+            self.backup_panel.schedule_auto_backup()
 
     def _on_select_all_notes_requested(self) -> None:
         """Enter selection mode on notes list from sidebar All Notes right-click."""

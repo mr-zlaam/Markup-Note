@@ -44,17 +44,19 @@ class GitHubClient:
     USER_AGENT = "MarkupNotes-App/1.0"
     TOKEN_GENERATE_URL = "https://github.com/settings/tokens/new?scopes=repo&description=Markup+Notes"
 
-    def __init__(self, config_dir: Optional[Path] = None) -> None:
+    def __init__(self, config_dir: Optional[Path] = None, check_cli_fallback: Optional[bool] = None) -> None:
         self.config_dir = config_dir if config_dir is not None else get_config_dir()
         self.auth_file = self.config_dir / "github_auth.json"
+        self.check_cli_fallback = check_cli_fallback if check_cli_fallback is not None else (config_dir is None)
 
     def get_token(self) -> Optional[str]:
         """Retrieve stored GitHub token from secure local configuration."""
         if not self.auth_file.exists():
             # Check if GitHub CLI has an active token as fallback
-            gh_token = self._get_gh_cli_token()
-            if gh_token:
-                return gh_token
+            if self.check_cli_fallback:
+                gh_token = self._get_gh_cli_token()
+                if gh_token:
+                    return gh_token
             return None
 
         try:

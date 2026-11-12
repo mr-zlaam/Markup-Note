@@ -1086,7 +1086,7 @@ class MarkdownEditor(QTextEdit):
         rect = self.cursorRect(c)
         box_x = float(rect.left() + 3)
         box_y = float(rect.top()) + (rect.height() - 14.0) / 2.0
-        hit_rect = QRectF(box_x - 3.0, box_y - 3.0, 20.0, 20.0)
+        hit_rect = QRectF(box_x - 4.0, box_y - 4.0, 22.0, 22.0)
 
         if hit_rect.contains(pos):
             return block
@@ -1326,9 +1326,12 @@ class MarkdownEditor(QTextEdit):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Show pointer cursor on interactive elements and handle scrollbar dragging."""
-        if is_touch_event(event) or self._touch_tracker.is_active:
-            self._on_touch_move(event.position())
+        if is_touch_event(event):
+            if self._touch_tracker.is_active:
+                self._on_touch_move(event.position())
             return
+        elif self._touch_tracker.is_active:
+            self._touch_tracker.reset()
 
         super().mouseMoveEvent(event)
         pos = event.position()
@@ -1448,6 +1451,8 @@ class MarkdownEditor(QTextEdit):
         if is_touch_event(event):
             self._on_touch_down(event.position())
             return
+        elif self._touch_tracker.is_active:
+            self._touch_tracker.reset()
 
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
@@ -1571,9 +1576,11 @@ class MarkdownEditor(QTextEdit):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """Finish any active scrollbar dragging or touch scrolling."""
-        if is_touch_event(event) or self._touch_tracker.is_active:
+        if is_touch_event(event):
             self._on_touch_up(event.position())
             return
+        elif self._touch_tracker.is_active:
+            self._touch_tracker.reset()
 
         self._scrollbar_drag = None
         super().mouseReleaseEvent(event)

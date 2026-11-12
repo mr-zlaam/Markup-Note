@@ -7,24 +7,42 @@ calculation for touchscreen laptops and touch devices.
 import math
 from typing import List, Optional, Tuple
 
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QInputDevice, QMouseEvent, QPointingDevice, QSinglePointEvent
 
 
 def is_touch_event(event: QMouseEvent | QSinglePointEvent) -> bool:
-    """Return True if the event originated from a touchscreen, finger, or synthesized touch."""
+    """Return True ONLY if the event originated from a physical direct touchscreen.
+
+    Touchpads (trackpads) and standard mice must NEVER be treated as touchscreens,
+    as they control the mouse cursor and support standard desktop gestures (such
+    as double-tap-to-select and drag-to-select).
+    """
+    # 1. Non-synthesized events are real hardware mouse or touchpad interactions
     try:
-        if event.deviceType() == QInputDevice.DeviceType.TouchScreen:
+        if hasattr(event, "source"):
+            if event.source() == Qt.MouseEventSource.MouseEventNotSynthesized:
+                return False
+    except Exception:
+        pass
+
+    # 2. Check device type explicitly: TouchPad and Mouse are NOT touchscreens
+    try:
+        dev_type = event.deviceType()
+        if dev_type in (QInputDevice.DeviceType.TouchPad, QInputDevice.DeviceType.Mouse):
+            return False
+        if dev_type == QInputDevice.DeviceType.TouchScreen:
             return True
     except Exception:
         pass
 
+    # 3. Check pointing device: TouchPad or Mouse must return False
     try:
         p_dev = event.pointingDevice()
         if p_dev is not None:
+            if p_dev.type() in (QInputDevice.DeviceType.TouchPad, QInputDevice.DeviceType.Mouse):
+                return False
             if p_dev.type() == QInputDevice.DeviceType.TouchScreen:
-                return True
-            if p_dev.pointerType() == QPointingDevice.PointerType.Finger:
                 return True
     except Exception:
         pass

@@ -119,6 +119,7 @@ class MainWindow(QMainWindow):
         self.backup_panel.close_requested.connect(self.toggle_backup_panel)
         self.backup_panel.changes_updated.connect(self.editor.set_backup_changes_count)
         self.backup_panel.note_reverted.connect(self._on_note_reverted)
+        self.backup_panel.sync_completed.connect(self._on_sync_completed)
 
         # Restore layout from configuration
         folders_w = self.config.layout.folders_width if self.config.layout.folders_visible else 0
@@ -857,6 +858,14 @@ class MainWindow(QMainWindow):
     def _on_quick_sync(self) -> None:
         """Execute quick cloud sync (Ctrl+Shift+S)."""
         self.backup_panel.trigger_sync()
+
+    def _on_sync_completed(self, success: bool, message: str) -> None:
+        """Refresh sidebar folders and note list when remote notes are imported or synchronized."""
+        if success:
+            self.sidebar.set_folders(self.storage.get_folders(), current_selection=self._current_folder)
+            self._update_watcher_paths()
+            current_path = str(self._current_note.path) if self._current_note else None
+            self._refresh_notes(preserve_path=current_path, emit_selection=False)
 
     def _on_note_reverted(self, rel_path: str) -> None:
         """Handle note reverted event from backup panel."""

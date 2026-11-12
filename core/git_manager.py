@@ -219,8 +219,32 @@ class GitManager:
 
         return (True, "Changes committed successfully.")
 
+    def is_in_rebase(self) -> bool:
+        """Check if repository is suspended in an unfinished rebase."""
+        git_dir = self.repo_path / ".git"
+        return (git_dir / "rebase-apply").exists() or (git_dir / "rebase-merge").exists()
+
+    def abort_rebase(self) -> bool:
+        """Abort an in-progress rebase to restore a clean branch state."""
+        if self.is_in_rebase():
+            code, _, _ = self._run_git(["rebase", "--abort"])
+            return code == 0
+        return True
+
+    def fetch(self, remote: str = "origin") -> Tuple[bool, str]:
+        """Fetch latest commits and branches from remote repository."""
+        if not self.is_repo():
+            return (False, "Not a Git repository.")
+        status = self.get_status()
+        if not status.remote_url:
+            return (False, "No remote repository configured.")
+        code, out, err = self._run_git(["fetch", remote, status.branch], timeout=35)
+        if code != 0:
+            return (False, err or out or "Fetch failed.")
+        return (True, out or "Fetched remote updates.")
+
     def pull(self, remote: str = "origin") -> Tuple[bool, str]:
-        """Pull latest changes from remote branch using rebase to prevent merge clutter."""
+        """Safely import and merge remote changes with two-way conflict preservation."""
         if not self.is_repo():
             return (False, "Not a Git repository.")
 
@@ -228,10 +252,98 @@ class GitManager:
         if not status.remote_url:
             return (False, "No remote repository configured.")
 
-        code, out, err = self._run_git(["pull", "--rebase", remote, status.branch], timeout=30)
-        if code != 0:
-            return (False, err or out or "Pull failed.")
-        return (True, out or "Updated from remote.")
+        # 1. Recover from any stale rebase state
+        if self.is_in_rebase():
+            self.abort_rebase()
+
+        # 2. Stage and commit any pending local changes first so working tree is clean
+        if not status.is_clean:
+            ok_com, msg_com = self.stage_and_commit("Local notes backup before syncing")
+            if not ok_com:
+                return (False, f"Cannot sync: failed to commit local changes ({msg_com})")
+
+        # 3. Fetch from remote
+        code_fetch, out_fetch, err_fetch = self._run_git(["fetch", remote, status.branch], timeout=35)
+        if code_fetch != 0:
+            # If remote branch doesn't exist yet (brand new empty remote repo on GitHub), that's expected
+            err_lower = (err_fetch or out_fetch).lower()
+            if "couldn't find remote ref" in err_lower or "no tracking" in err_lower:
+                return (True, "Remote repository is empty, ready for first push.")
+            return (False, f"Fetch failed: {err_fetch or out_fetch}")
+
+        remote_ref = f"{remote}/{status.branch}"
+
+        # 4. Check if local HEAD exists
+        code_head, _, _ = self._run_git(["rev-parse", "--verify", "HEAD"])
+        if code_head != 0:
+            # Local repo has zero commits yet; reset directly to remote branch
+            code_reset, _, err_reset = self._run_git(["reset", "--hard", remote_ref])
+            if code_reset == 0:
+                return (True, "Imported remote notes into fresh vault.")
+            return (False, f"Initial import failed: {err_reset}")
+
+        # 5. Check if local HEAD and remote_ref are identical
+        code_diff, diff_out, _ = self._run_git(["rev-list", "--count", f"HEAD...{remote_ref}"])
+        if code_diff == 0 and diff_out.strip() == "0":
+            return (True, "Already up to date with remote.")
+
+        # 6. Try clean rebase first (replays local commits cleanly on top of remote)
+        code_reb, out_reb, err_reb = self._run_git(["rebase", remote_ref], timeout=35)
+        if code_reb == 0:
+            return (True, "Rebased local changes cleanly onto remote.")
+
+        # If rebase encountered a conflict or failed:
+        self.abort_rebase()
+
+        # 7. Fallback to 3-way merge with --allow-unrelated-histories
+        code_merge, out_merge, err_merge = self._run_git(
+            ["merge", "--allow-unrelated-histories", "-m", "Merge notes with cloud backup", remote_ref],
+            timeout=35,
+        )
+
+        # Check for unmerged / conflicted files
+        code_conf, conf_out, _ = self._run_git(["diff", "--name-only", "--diff-filter=U"])
+        conflicted_files = [line.strip() for line in conf_out.splitlines() if line.strip()]
+
+        if conflicted_files:
+            for c_file in conflicted_files:
+                p = Path(c_file)
+                if p.name == ".gitignore":
+                    self._run_git(["checkout", "--ours", c_file])
+                    self._run_git(["add", c_file])
+                    continue
+
+                # Preserve local version in current file
+                self._run_git(["checkout", "--ours", c_file])
+
+                # Extract remote version into a safe "(Cloud Backup)" duplicate file
+                code_show, remote_text, _ = self._run_git(["show", f"{remote_ref}:{c_file}"])
+                if code_show == 0:
+                    stem = p.stem
+                    suffix = p.suffix
+                    conflict_filename = f"{stem} (Cloud Backup){suffix}"
+                    conflict_path = self.repo_path / p.parent / conflict_filename
+
+                    counter = 2
+                    while conflict_path.exists():
+                        conflict_filename = f"{stem} (Cloud Backup {counter}){suffix}"
+                        conflict_path = self.repo_path / p.parent / conflict_filename
+                        counter += 1
+
+                    try:
+                        conflict_path.parent.mkdir(parents=True, exist_ok=True)
+                        file_content = remote_text if remote_text.endswith("\n") else f"{remote_text}\n"
+                        conflict_path.write_text(file_content, encoding="utf-8")
+                        self._run_git(["add", str(conflict_path.relative_to(self.repo_path))])
+                    except OSError:
+                        pass
+
+                self._run_git(["add", c_file])
+
+            # Commit the conflict-free merged state
+            self._run_git(["commit", "-m", "Auto-resolved note conflicts by preserving both local and cloud versions"])
+
+        return (True, "Successfully imported and merged remote notes.")
 
     def push(self, remote: str = "origin") -> Tuple[bool, str]:
         """Push local commits to remote branch."""
@@ -248,33 +360,31 @@ class GitManager:
         return (True, out or "Pushed to remote.")
 
     def sync(self, message: Optional[str] = None) -> Tuple[bool, str]:
-        """All-in-one sync: pull latest, stage all, commit if dirty, and push to remote."""
+        """All-in-one sync: commit local notes, pull and merge remote, and push to GitHub."""
         if not self.is_repo():
             ok_init, msg_init = self.init_repo()
             if not ok_init:
                 return (False, msg_init)
 
-        status = self.get_status()
-
-        # 1. Pull remote if remote configured
-        if status.remote_url:
-            ok_pull, msg_pull = self.pull()
-            if not ok_pull and "couldn't find remote ref" not in msg_pull.lower() and "no tracking" not in msg_pull.lower():
-                # Note: first push won't have remote ref yet, which is expected
-                pass
-
-        # 2. Stage and commit if dirty
+        # 1. Stage and commit local notes first
         status = self.get_status()
         if not status.is_clean:
             ok_com, msg_com = self.stage_and_commit(message)
             if not ok_com:
                 return (False, msg_com)
 
+        # 2. Pull & merge from remote if configured
+        status = self.get_status()
+        if status.remote_url:
+            ok_pull, msg_pull = self.pull()
+            if not ok_pull:
+                return (False, f"Pull/Merge failed: {msg_pull}")
+
         # 3. Push to remote if configured
         if status.remote_url:
             ok_push, msg_push = self.push()
             if not ok_push:
-                return (False, f"Committed locally, but push failed: {msg_push}")
+                return (False, f"Merged locally, but push failed: {msg_push}")
             return (True, "Synchronized and backed up to GitHub successfully.")
 
         return (True, "Notes saved and committed to local history.")

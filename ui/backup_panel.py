@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
 from core.git_manager import GitCommit, GitManager, GitStatus
 from core.github_client import GitHubClient
 from core.storage import StorageManager
-from ui.diff_dialog import ModernDiffDialog
 from ui.github_auth_dialog import ModernGitHubAuthDialog
 from utils.icons import (
     create_backup_icon,
@@ -179,6 +178,7 @@ class BackupPanel(QWidget):
     close_requested = pyqtSignal()
     changes_updated = pyqtSignal(int)  # Emits total pending unbacked changes count
     note_reverted = pyqtSignal(str)   # Emits relative path of note when reverted
+    sync_completed = pyqtSignal(bool, str)  # Emits (success, message) on sync completion
 
     def __init__(
         self,
@@ -424,8 +424,6 @@ class BackupPanel(QWidget):
         self.changes_list.setObjectName("ChangesList")
         self.changes_list.setItemDelegate(ChangeItemDelegate(self))
         self.changes_list.setFixedHeight(110)
-        self.changes_list.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-        self.changes_list.itemClicked.connect(self._on_change_item_clicked)
         layout.addWidget(self.changes_list)
 
         # Separator line 2
@@ -550,26 +548,6 @@ class BackupPanel(QWidget):
         item.setData(Qt.ItemDataRole.UserRole + 1, f"{commit.relative_date} • {commit.short_hash}")
         self.history_list.addItem(item)
 
-    def _on_change_item_clicked(self, item: QListWidgetItem) -> None:
-        """Open ModernDiffDialog when clicking a changed note."""
-        rel_path = item.data(Qt.ItemDataRole.UserRole)
-        badge = item.data(Qt.ItemDataRole.UserRole + 1)
-        if not rel_path or badge in ("Deleted", "Clean"):
-            return
-
-        diff_text = self.git_manager.get_file_diff(rel_path)
-        dlg = ModernDiffDialog(
-            parent=self,
-            file_name=Path(rel_path).name,
-            diff_text=diff_text,
-            can_revert=True,
-        )
-        if dlg.exec() and dlg.revert_requested:
-            ok, msg = self.git_manager.revert_file(rel_path)
-            if ok:
-                self.note_reverted.emit(rel_path)
-            self.refresh_status()
-
     def _on_account_action_clicked(self) -> None:
         """Handle click on Connect / Initialize / Disconnect button."""
         action_text = self.account_action_btn.text().lower()
@@ -607,6 +585,7 @@ class BackupPanel(QWidget):
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("☁  Sync Notes")
         self.refresh_status()
+        self.sync_completed.emit(success, message)
 
         if success:
             self.sync_dot.setStyleSheet("color: #30d158; font-size: 8px;")

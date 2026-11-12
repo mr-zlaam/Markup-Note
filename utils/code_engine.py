@@ -1,8 +1,10 @@
 """Syntax highlighting and native vector card renderer for code blocks."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (

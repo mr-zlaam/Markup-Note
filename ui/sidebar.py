@@ -1,5 +1,7 @@
 """Sidebar widget displaying folders tree hierarchy, navigation categories, and folder management."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 

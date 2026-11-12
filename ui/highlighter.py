@@ -1,5 +1,7 @@
 """Obsidian-style cursor-aware Markdown syntax highlighter for PyQt6."""
 
+from __future__ import annotations
+
 import re
 from typing import Dict, List, Optional, Set, Tuple
 

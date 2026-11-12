@@ -1,8 +1,11 @@
 """Native high-DPI vector icon generation utilities for Note Taker UI."""
 
-from typing import List, Optional, Tuple
+from __future__ import annotations
+
 from pathlib import Path
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
+from typing import List, Optional, Tuple
+
+from PyQt6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 

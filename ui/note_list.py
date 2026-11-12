@@ -1,5 +1,7 @@
 """Note list widget displaying note cards with title, timestamp, and snippet."""
 
+from __future__ import annotations
+
 from typing import Dict, List, Optional, Set
 
 from PyQt6.QtCore import QModelIndex, QPoint, QRect, QRectF, QSize, Qt, pyqtSignal

@@ -11,6 +11,44 @@ cd "$PROJECT_ROOT"
 echo "==> Building Markup Notes AppImage..."
 echo "    Project Root: $PROJECT_ROOT"
 
+# Export APPIMAGE_EXTRACT_AND_RUN by default so AppImage tools work in rootless containers/CI
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+
+# Determine Python binary:
+if [ -n "$PYTHON" ]; then
+    PYTHON_BIN="$PYTHON"
+elif [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python3" ]; then
+    PYTHON_BIN="$VIRTUAL_ENV/bin/python3"
+elif [ -x "$PROJECT_ROOT/.venv/bin/python3" ] && "$PROJECT_ROOT/.venv/bin/python3" --version >/dev/null 2>&1; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+else
+    PYTHON_BIN="$(command -v python3 || true)"
+fi
+
+if [ -z "$PYTHON_BIN" ] || [ ! -x "$PYTHON_BIN" ]; then
+    echo "ERROR: python3 not found. Please activate your virtual environment or set PYTHON=/path/to/python3." >&2
+    exit 1
+fi
+
+# Determine PyInstaller binary:
+if [ -n "$PYINSTALLER" ]; then
+    PYINSTALLER_BIN="$PYINSTALLER"
+elif [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/pyinstaller" ]; then
+    PYINSTALLER_BIN="$VIRTUAL_ENV/bin/pyinstaller"
+elif [ -x "$PROJECT_ROOT/.venv/bin/pyinstaller" ] && "$PROJECT_ROOT/.venv/bin/pyinstaller" --version >/dev/null 2>&1; then
+    PYINSTALLER_BIN="$PROJECT_ROOT/.venv/bin/pyinstaller"
+else
+    PYINSTALLER_BIN="$(command -v pyinstaller || true)"
+fi
+
+if [ -z "$PYINSTALLER_BIN" ] || [ ! -x "$PYINSTALLER_BIN" ]; then
+    echo "ERROR: pyinstaller not found. Please ensure pyinstaller is installed in your active Python environment." >&2
+    exit 1
+fi
+
+echo "    Using Python:      $PYTHON_BIN ($($PYTHON_BIN --version 2>&1))"
+echo "    Using PyInstaller: $PYINSTALLER_BIN"
+
 BUILD_DIR="$PROJECT_ROOT/build"
 APPDIR="$BUILD_DIR/AppDir"
 OUTPUT_APPIMAGE="$PROJECT_ROOT/MarkupNotes-x86_64.AppImage"
@@ -24,7 +62,7 @@ mkdir -p "$APPDIR/usr/share/icons"
 
 # 1. Generate/verify standard XDG icons
 echo "==> Ensuring standard XDG icon tiers are present..."
-QT_QPA_PLATFORM=offscreen .venv/bin/python3 -c "
+QT_QPA_PLATFORM=offscreen "$PYTHON_BIN" -c "
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
@@ -34,7 +72,7 @@ generate_standard_app_icons()
 
 # 2. Compile application with PyInstaller (lean, targeted for optimal size)
 echo "==> Compiling application with PyInstaller (stripped of unused Qt modules)..."
-.venv/bin/pyinstaller \
+"$PYINSTALLER_BIN" \
     --name markup-notes \
     --windowed \
     --onedir \

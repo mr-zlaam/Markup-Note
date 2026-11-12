@@ -1,5 +1,7 @@
 """Floating text formatting bubble toolbar for selected text (Notion aesthetic)."""
 
+from __future__ import annotations
+
 from typing import Optional
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal

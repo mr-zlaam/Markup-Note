@@ -1,5 +1,7 @@
 """In-note Find and Replace floating bar widget (Notion / VS Code aesthetic)."""
 
+from __future__ import annotations
+
 from typing import Optional, Tuple
 from PyQt6.QtCore import QEvent, QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeyEvent

@@ -1,5 +1,7 @@
 """Visual styling and QSS theme for Apple Notes aesthetic on Linux."""
 
+from __future__ import annotations
+
 DARK_THEME_QSS = """
 /* Global Window & Fonts */
 QMainWindow, QWidget {

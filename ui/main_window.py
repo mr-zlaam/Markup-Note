@@ -1,5 +1,7 @@
 """Main application window with 3-column collapsible splitter layout."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import List, Optional, Union
 

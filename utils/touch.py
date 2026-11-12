@@ -4,6 +4,8 @@ Provides robust touch detection, drag-to-scroll tracking, and kinetic momentum
 calculation for touchscreen laptops and touch devices.
 """
 
+from __future__ import annotations
+
 import math
 from typing import List, Optional, Tuple
 

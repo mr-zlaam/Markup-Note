@@ -1,10 +1,12 @@
 """Editor canvas panel with Obsidian-style cursor-aware Live Preview and debounced auto-save."""
 
+from __future__ import annotations
+
 import math
 from pathlib import Path
 import re
 import time
-from typing import Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 from PyQt6.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import (

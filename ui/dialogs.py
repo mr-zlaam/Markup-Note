@@ -1,5 +1,8 @@
 """Modern, sleek dialogs matching the Apple Notes aesthetic."""
 
+from __future__ import annotations
+
+from pathlib import Path
 from typing import Optional, Tuple
 
 from PyQt6.QtCore import QSize, Qt

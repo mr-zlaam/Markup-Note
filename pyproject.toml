@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A fast, lightweight, native Markdown note-taking app for Linux (and Electron haters)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "GPL-2.0-only" }
+license = "GPL-2.0-only"
 authors = [
     { name = "zlaam" }
 ]

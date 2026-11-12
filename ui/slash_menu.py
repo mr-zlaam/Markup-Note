@@ -1,5 +1,7 @@
 """Floating slash ('/') command palette for instant markdown block insertion (Notion aesthetic)."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import List, Optional
 

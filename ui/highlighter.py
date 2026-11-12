@@ -72,6 +72,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent: QTextDocument) -> None:
         super().__init__(parent)
         self.active_block_number: int = 0
+        self.cursor_pos_in_block: int = -1
         self.table_regions: List[TableRegion] = []
         self.math_regions: List[MathRegion] = []
         self.mermaid_regions: List[MermaidRegion] = []
@@ -147,25 +148,25 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.list_marker_format.setForeground(QColor("#0a84ff"))
         self.list_marker_format.setFontWeight(QFont.Weight.Bold)
 
-        # Bullet hide format (transparent on inactive lines so vector bullet dot is drawn)
+        # Bullet hide format (transparent on inactive lines with natural gap matching checkboxes)
         self.bullet_hide_format = QTextCharFormat()
         self.bullet_hide_format.setForeground(QColor(0, 0, 0, 0))
+        self.bullet_hide_format.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+        self.bullet_hide_format.setFontLetterSpacing(10.0)
+
+        # Ordered list space format (natural gap matching checkboxes)
+        self.ordered_list_space_format = QTextCharFormat()
+        self.ordered_list_space_format.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+        self.ordered_list_space_format.setFontLetterSpacing(14.0)
 
         # Ordered list number format (Apple Notes blue / bold)
         self.ordered_list_format = QTextCharFormat()
         self.ordered_list_format.setForeground(QColor("#0a84ff"))
         self.ordered_list_format.setFontWeight(QFont.Weight.Bold)
 
-        # Checkboxes (hidden font size 1 + clean spacer so selection never reveals raw [ ] brackets)
+        # Checkboxes (transparent prefix preserving full line height and natural spacing to text)
         self.checkbox_prefix_format = QTextCharFormat()
-        self.checkbox_prefix_format.setFontPointSize(1)
         self.checkbox_prefix_format.setForeground(QColor(0, 0, 0, 0))
-
-        self.checkbox_spacer_format = QTextCharFormat()
-        self.checkbox_spacer_format.setFontPointSize(1)
-        self.checkbox_spacer_format.setForeground(QColor(0, 0, 0, 0))
-        self.checkbox_spacer_format.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
-        self.checkbox_spacer_format.setFontLetterSpacing(20.0)
 
         # Strikethrough (~~strike~~)
         self.strike_format = QTextCharFormat()
@@ -297,6 +298,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         """Apply cursor-aware Obsidian-style highlighting to the current block."""
         block_num = self.currentBlock().blockNumber()
         is_active = block_num == self.active_block_number
+        cursor_pos = self.cursor_pos_in_block if is_active else -1
 
         # 0. Check multi-line region overrides (Tables, Display Math, Mermaid)
         if block_num in self._block_modes:
@@ -390,7 +392,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             h_fmt.setForeground(base_color)
             self._format(text, 0, len(text), h_fmt)
 
-            if is_active:
+            is_marker_active = is_active and (cursor_pos <= prefix_len)
+            if is_marker_active:
                 active_marker = QTextCharFormat(h_fmt)
                 active_marker.setForeground(QColor("#636366"))
                 self._format(text, 0, prefix_len, active_marker)
@@ -405,7 +408,6 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             prefix_len = len(prefix)
             is_checked = status.lower() == "x"
             self._format(text, prefix_start, prefix_len, self.checkbox_prefix_format)
-            self._format(text, prefix_start, 1, self.checkbox_spacer_format)
 
             if is_checked:
                 text_start = prefix_start + prefix_len
@@ -415,8 +417,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         q_match = QUOTE_RE.match(text) if not (h_match or cb_match) else None
         if q_match:
             prefix = q_match.group(1)
+            prefix_len = len(prefix)
+            is_marker_active = is_active and (cursor_pos <= prefix_len)
             self._format(text, 0, len(text), self.quote_format)
-            if is_active:
+            if is_marker_active:
                 self._format(text, 0, len(prefix), self.quote_bar_format)
             else:
                 self._format(text, 0, len(prefix), self.hidden_format)
@@ -428,7 +432,6 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 l_indent, l_prefix, l_status, _ = inner_cb.groups()
                 p_start = len(prefix) + len(l_indent)
                 self._format(text, p_start, len(l_prefix), self.checkbox_prefix_format)
-                self._format(text, p_start, 1, self.checkbox_spacer_format)
                 if l_status.lower() == "x":
                     t_start = p_start + len(l_prefix)
                     self._format(text, t_start, len(text) - t_start, self.checked_task_format)
@@ -437,32 +440,40 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 if inner_list:
                     l_indent, l_marker, l_sp, _ = inner_list.groups()
                     m_start = len(prefix) + len(l_indent)
+                    inner_prefix_len = len(prefix) + len(l_indent) + len(l_marker) + len(l_sp)
+                    inner_marker_active = is_active and (cursor_pos <= inner_prefix_len)
                     if l_marker in ("-", "*", "+"):
-                        if is_active:
+                        if inner_marker_active:
                             self._format(text, m_start, len(l_marker), self.list_marker_format)
                             self._format(text, m_start + len(l_marker), len(l_sp), self.marker_format)
                         else:
-                            self._format(text, m_start, len(l_marker), self.bullet_hide_format)
+                            self._format(text, m_start, len(l_marker) + len(l_sp), self.bullet_hide_format)
                     else:
                         self._format(text, m_start, len(l_marker), self.ordered_list_format)
-                        if is_active:
+                        if inner_marker_active:
                             self._format(text, m_start + len(l_marker), len(l_sp), self.marker_format)
+                        else:
+                            self._format(text, m_start + len(l_marker), len(l_sp), self.ordered_list_space_format)
 
         # 6. Standard Bullet / Numbered Lists (- item, 1. item)
         list_match = LIST_RE.match(text) if not (h_match or cb_match or q_match) else None
         if list_match:
             indent, marker, space, _ = list_match.groups()
             m_start = len(indent)
+            prefix_len = len(indent) + len(marker) + len(space)
+            is_marker_active = is_active and (cursor_pos <= prefix_len)
             if marker in ("-", "*", "+"):
-                if is_active:
+                if is_marker_active:
                     self._format(text, m_start, len(marker), self.list_marker_format)
                     self._format(text, m_start + len(marker), len(space), self.marker_format)
                 else:
-                    self._format(text, m_start, len(marker), self.bullet_hide_format)
+                    self._format(text, m_start, len(marker) + len(space), self.bullet_hide_format)
             else:
                 self._format(text, m_start, len(marker), self.ordered_list_format)
-                if is_active:
+                if is_marker_active:
                     self._format(text, m_start + len(marker), len(space), self.marker_format)
+                else:
+                    self._format(text, m_start + len(marker), len(space), self.ordered_list_space_format)
 
         # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), $math$, HTML, #tag)
         self._apply_inline_rules(text, is_active, base_point_size, base_bold, base_color)
@@ -642,7 +653,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         base_point_size: Optional[int],
     ) -> None:
         """Style opening and closing inline markdown delimiters."""
-        if is_active:
+        should_reveal = is_active and (start <= self.cursor_pos_in_block <= end)
+        if should_reveal:
             m_fmt = QTextCharFormat(self.marker_format)
             if base_point_size:
                 m_fmt.setFontPointSize(base_point_size)

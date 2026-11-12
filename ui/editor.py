@@ -21,6 +21,7 @@ from PyQt6.QtGui import (
     QPaintEvent,
     QPen,
     QTextBlock,
+    QTextBlockFormat,
     QTextCursor,
     QTextOption,
     QTouchEvent,
@@ -164,6 +165,13 @@ class MarkdownEditor(QTextEdit):
         base_font.setPointSize(16)
         self.setFont(base_font)
         self.document().setDefaultFont(base_font)
+
+        # Apply comfortable 120% proportional line height across documents
+        cur = self.textCursor()
+        bf = cur.blockFormat()
+        bf.setLineHeight(120.0, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
+        cur.setBlockFormat(bf)
+        self.setTextCursor(cur)
 
         # Attach cursor-aware Obsidian syntax highlighter
         self.highlighter = MarkdownHighlighter(self.document())
@@ -721,7 +729,7 @@ class MarkdownEditor(QTextEdit):
         return QRectF(float(r_top.left()), float(r_top.top()), avail_w, card_h)
 
     def _update_blockquote_margins(self) -> None:
-        """Ensure all blockquotes have leftMargin proportional to their quote nesting depth."""
+        """Ensure all blockquotes have leftMargin proportional to their quote nesting depth and uniform line height."""
         if self._updating_margins:
             return
         self._updating_margins = True
@@ -743,14 +751,25 @@ class MarkdownEditor(QTextEdit):
 
                     c = QTextCursor(b)
                     bf = c.blockFormat()
+                    changed = False
                     if abs(bf.leftMargin() - target_margin) > 0.5:
                         bf.setLeftMargin(target_margin)
+                        changed = True
+                    if abs(bf.lineHeight() - 120.0) > 0.5:
+                        bf.setLineHeight(120.0, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
+                        changed = True
+                    if changed:
                         c.setBlockFormat(bf)
                     b = b.next()
             finally:
                 cur.endEditBlock()
         finally:
             self._updating_margins = False
+
+    def setPlainText(self, text: str) -> None:
+        """Set editor plain text and synchronously apply line height and block margins."""
+        super().setPlainText(text)
+        self._update_blockquote_margins()
 
     def insertFromMimeData(self, source: QMimeData) -> None:
         """Ensure pasted content is always inserted as clean Markdown / plain text in a single edit block."""
@@ -769,6 +788,9 @@ class MarkdownEditor(QTextEdit):
         """Recompute table, math, and mermaid regions on text content modification."""
         if not self._updating_margins:
             self._margin_timer.start()
+        cursor = self.textCursor()
+        self.highlighter.active_block_number = cursor.block().blockNumber()
+        self.highlighter.cursor_pos_in_block = cursor.positionInBlock()
         changed = self.highlighter.refresh_regions()
         for b_num in changed:
             b = self.document().findBlockByNumber(b_num)
@@ -777,13 +799,20 @@ class MarkdownEditor(QTextEdit):
         self.viewport().update()
 
     def _on_cursor_position_changed(self) -> None:
-        """Rehighlight lines and regions when the cursor moves between lines."""
-        new_block = self.textCursor().block()
+        """Rehighlight lines and regions when the cursor moves between lines or across syntax boundaries."""
+        cursor = self.textCursor()
+        new_block = cursor.block()
         new_block_num = new_block.blockNumber()
-        old_block_num = self.highlighter.active_block_number
+        new_pos_in_block = cursor.positionInBlock()
 
-        if new_block_num != old_block_num:
-            self.highlighter.active_block_number = new_block_num
+        old_block_num = self.highlighter.active_block_number
+        old_pos_in_block = getattr(self.highlighter, "cursor_pos_in_block", -1)
+
+        block_changed = new_block_num != old_block_num
+        self.highlighter.active_block_number = new_block_num
+        self.highlighter.cursor_pos_in_block = new_pos_in_block
+
+        if block_changed:
             changed = self.highlighter.refresh_regions()
             changed.add(old_block_num)
             changed.add(new_block_num)
@@ -791,6 +820,10 @@ class MarkdownEditor(QTextEdit):
                 b = self.document().findBlockByNumber(b_num)
                 if b.isValid():
                     self.highlighter.rehighlightBlock(b)
+        else:
+            if new_pos_in_block != old_pos_in_block:
+                self.highlighter.rehighlightBlock(new_block)
+
         self.viewport().update()
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -1015,10 +1048,9 @@ class MarkdownEditor(QTextEdit):
                             if rect.bottom() >= 0:
                                 self._draw_checkbox(painter, rect, status.lower() == "x")
 
-            # Inactive Bullet list item (never inside code blocks or table regions, and not checkboxes)
+            # Bullet list item vector rendering (renders when block is inactive OR caret is in content)
             if (
-                b_num != active_bn
-                and block.userState() != 1
+                block.userState() != 1
                 and b_num not in self.highlighter._block_modes
             ):
                 if not CHECKBOX_PATTERN.match(text):
@@ -1026,11 +1058,17 @@ class MarkdownEditor(QTextEdit):
                     if lm:
                         indent, marker, space, _ = lm.groups()
                         if marker in ("-", "*", "+"):
-                            c_bl = QTextCursor(block)
-                            c_bl.setPosition(block.position() + len(indent))
-                            rect = self.cursorRect(c_bl)
-                            if rect.bottom() >= 0:
-                                self._draw_bullet(painter, rect, len(indent))
+                            prefix_len = len(indent) + len(marker) + len(space)
+                            should_draw_bullet = (
+                                b_num != active_bn
+                                or getattr(self.highlighter, "cursor_pos_in_block", -1) > prefix_len
+                            )
+                            if should_draw_bullet:
+                                c_bl = QTextCursor(block)
+                                c_bl.setPosition(block.position() + len(indent))
+                                rect = self.cursorRect(c_bl)
+                                if rect.bottom() >= 0:
+                                    self._draw_bullet(painter, rect, len(indent))
                     else:
                         qm = QUOTE_RE.match(text)
                         if qm:
@@ -1041,11 +1079,17 @@ class MarkdownEditor(QTextEdit):
                                 if ilm:
                                     l_indent, l_marker, l_sp, _ = ilm.groups()
                                     if l_marker in ("-", "*", "+"):
-                                        c_bl = QTextCursor(block)
-                                        c_bl.setPosition(block.position() + len(prefix) + len(l_indent))
-                                        rect = self.cursorRect(c_bl)
-                                        if rect.bottom() >= 0:
-                                            self._draw_bullet(painter, rect, len(l_indent))
+                                        prefix_len = len(prefix) + len(l_indent) + len(l_marker) + len(l_sp)
+                                        should_draw_bullet = (
+                                            b_num != active_bn
+                                            or getattr(self.highlighter, "cursor_pos_in_block", -1) > prefix_len
+                                        )
+                                        if should_draw_bullet:
+                                            c_bl = QTextCursor(block)
+                                            c_bl.setPosition(block.position() + len(prefix) + len(l_indent))
+                                            rect = self.cursorRect(c_bl)
+                                            if rect.bottom() >= 0:
+                                                self._draw_bullet(painter, rect, len(l_indent))
 
             # Inline Math on inactive regular blocks (never inside tables or code blocks)
             if (
@@ -1072,7 +1116,7 @@ class MarkdownEditor(QTextEdit):
     def _draw_bullet(self, painter: QPainter, cursor_rect: QRect, indent_len: int) -> None:
         """Draw an Apple Notes-style vector bullet glyph (dot, ring, or square) at cursor_rect."""
         level = max(0, indent_len // 2)
-        cx = float(cursor_rect.left()) + 4.5
+        cx = float(cursor_rect.left()) + 10.0
         cy = float(cursor_rect.top()) + float(cursor_rect.height()) / 2.0
 
         if level == 0:
@@ -2353,8 +2397,7 @@ class EditorPanel(QWidget):
             self._title_timer.stop()
         new_title = self.title_edit.text().strip()
         if not new_title:
-            new_title = "Untitled"
-            self.title_edit.setText(new_title)
+            return
         if self._current_note is not None and new_title != self._current_note.title:
             self.title_changed.emit(new_title)
 
@@ -2489,7 +2532,9 @@ class EditorPanel(QWidget):
 
         self.editor.blockSignals(True)
         self.editor.setPlainText(cleaned_content)
+        self.editor._update_blockquote_margins()
         self.editor.highlighter.active_block_number = self.editor.textCursor().block().blockNumber()
+        self.editor.highlighter.cursor_pos_in_block = self.editor.textCursor().positionInBlock()
         self.editor.highlighter.refresh_regions()
         self.editor.highlighter.rehighlight()
         self.editor.viewport().update()
@@ -2508,7 +2553,7 @@ class EditorPanel(QWidget):
         self._current_note = note
         folder_name = note.path.parent.name
         self.meta_label.setText(f"{folder_name}  •  Edited {note.formatted_time}")
-        if self.title_edit.text() != note.title:
+        if not self.title_edit.hasFocus() and self.title_edit.text() != note.title:
             self.title_edit.blockSignals(True)
             self.title_edit.setText(note.title)
             self.title_edit.blockSignals(False)

@@ -93,7 +93,7 @@ modules:
       - type: git
         url: https://github.com/mr-zlaam/Markup-Note.git
         tag: v0.1.0
-        commit: e9cd81d446d348c6986ba713b7c75698ba8c0bfa
+        commit: f801e32e0667203183a9fd9c662a84ca79b4c0d5
       - type: file
         path: io.github.mr_zlaam.MarkupNotes.desktop
       - type: file

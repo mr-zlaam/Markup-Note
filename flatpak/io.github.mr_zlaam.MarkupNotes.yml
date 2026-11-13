@@ -90,20 +90,10 @@ modules:
           install -Dm644 assets/icons/hicolor/${size}x${size}/apps/markup-notes.png /app/share/icons/hicolor/${size}x${size}/apps/io.github.mr_zlaam.MarkupNotes.png
         done
     sources:
-      - type: file
-        path: ../main.py
-      - type: dir
-        path: ../ui
-        dest: ui
-      - type: dir
-        path: ../core
-        dest: core
-      - type: dir
-        path: ../utils
-        dest: utils
-      - type: dir
-        path: ../assets
-        dest: assets
+      - type: git
+        url: https://github.com/mr-zlaam/Markup-Note.git
+        tag: v0.1.0
+        commit: e9cd81d446d348c6986ba713b7c75698ba8c0bfa
       - type: file
         path: io.github.mr_zlaam.MarkupNotes.desktop
       - type: file

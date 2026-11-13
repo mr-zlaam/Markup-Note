@@ -1,0 +1,117 @@
+name: Bug Report
+description: Report an issue or unexpected behavior in Markup Notes
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue. Please fill out the sections below as thoroughly as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of the problem.
+      placeholder: Describe what happened and how it differs from what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the behavior.
+      value: |
+        1. Launch Markup Notes
+        2. Open or create a note titled '...'
+        3. Perform action '...'
+        4. Observe error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: The note should render without glitching...
+    validations:
+      required: true
+
+  - type: textarea
+    id: visual_evidence
+    attributes:
+      label: Visual Evidence (Screen Recording or Screenshots)
+      description: Please drag and drop a short screen recording (.mp4, .webm) or screenshots demonstrating the problem. This is strongly recommended for UI, rendering, or windowing issues.
+      placeholder: Drag and drop video or images here.
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation Method
+      description: How is Markup Notes installed or running on your system?
+      options:
+        - Flatpak
+        - AppImage
+        - Source (uv / pip)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os_distro
+    attributes:
+      label: Linux Distribution & Version
+      description: Which Linux distribution are you running?
+      placeholder: e.g., Fedora 40, Arch Linux, Ubuntu 24.04, CachyOS, openSUSE Tumbleweed
+    validations:
+      required: true
+
+  - type: dropdown
+    id: display_server
+    attributes:
+      label: Display Server Session
+      description: Are you running Wayland or X11?
+      options:
+        - Wayland
+        - X11
+        - Unknown / Other
+    validations:
+      required: true
+
+  - type: input
+    id: desktop_compositor
+    attributes:
+      label: Desktop Environment / Window Manager / Compositor
+      description: Which desktop environment or compositor is active?
+      placeholder: e.g., Niri, GNOME 46, KDE Plasma 6.2, Hyprland, Sway, COSMIC
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: Markup Notes Version
+      description: Version of Markup Notes (e.g., v0.1.0 or git commit hash).
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Logs / Traceback
+      description: If you ran Markup Notes from the terminal, please paste relevant error logs or Python tracebacks here.
+      render: shell
+      placeholder: Paste console output or stack trace here...
+
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: Verification
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true
+        - label: I have provided system information and session type (Wayland/X11).
+          required: true

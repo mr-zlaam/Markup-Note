@@ -1,0 +1,51 @@
+name: Feature Request
+description: Suggest an idea, enhancement, or workflow improvement for Markup Notes
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature. Clear, detailed feature proposals help guide development.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a specific problem or workflow friction?
+      placeholder: I find it difficult to... / When working on large notes, it would help if...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe what you would like Markup Notes to do.
+      placeholder: Provide a clear description of the desired behavior or UI component.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions, plugins, or existing tools you have evaluated.
+      placeholder: A clear description of other approaches you considered.
+
+  - type: textarea
+    id: visual_mockups
+    attributes:
+      label: Visual References or Mockups
+      description: Drag and drop screenshots, sketches, or wireframes illustrating the proposed feature if applicable.
+      placeholder: Drag and drop images here.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Proposal Checklist
+      options:
+        - label: I have searched existing issues and discussions to ensure this feature has not already been proposed.
+          required: true
+        - label: This proposed feature fits the project philosophy (native, lightweight, local-first).
+          required: true

@@ -4,7 +4,7 @@
 
 ![Markup Notes Icon](assets/markup-note.png)
 
-### Lightweight, Native Markdown Notes for Linux (and Electron Haters)
+### Native Markdown Notes App for Electron Haters
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 [![Python: >=3.10](https://img.shields.io/badge/python-3.10+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -21,7 +21,7 @@ Most modern note-taking apps wrap Chromium and consume **300 MB to 1 GB of RAM**
 
 **Markup Notes** is built from the ground up in Python and **PyQt6**, designed for Linux users who want:
 * **Blazing Fast Startup:** Cold launch in under 0.5s.
-* **Minimal Footprint:** Idles around **~40 MB of RAM**.
+* **Lean Footprint:** Low memory consumption (~100–120 MB idle), without Chromium or Electron background processes.
 * **100% Local-First:** Plain `.md` files stored safely on your filesystem (`~/Documents/Markup Notes`). No mandatory clouds, proprietary sync databases, or vendor lock-in.
 * **Native Wayland & Linux Desktop Integration:** Seamless support for COSMIC, GNOME, KDE Plasma, Niri, and Hyprland via native XDG Desktop Portals.
 

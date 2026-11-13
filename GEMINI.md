@@ -1,6 +1,6 @@
 # Project Rules & Best Practices
 
-## 🚨 Critical Gatekeeper Rule (Mandatory)
+## Critical Gatekeeper Rule (Mandatory)
 
 > **The "Dance" Authorization Rule:**
 > You are **strictly prohibited** from making any code changes, creating new code files, editing existing files, or modifying any project files **UNLESS** the user explicitly includes the word **`dance`** (case-insensitive) in their prompt.
@@ -10,7 +10,7 @@
 
 ---
 
-## 🐍 Python & Project Best Practices
+## Python & Project Best Practices
 
 ### 1. Architecture & Design
 * **Separation of Concerns:** Keep UI (`ui/`), business logic (`core/`), and data storage/IO (`storage/`) strictly decoupled.
@@ -44,5 +44,9 @@
 * **Virtual Environments Only:** Work exclusively within the project's virtual environment (`.venv`).
 * **Clean Dependencies:** Keep `pyproject.toml` minimal and lock versions reliably.
 * **Cross-Desktop Native Feel:** Respect standard Linux desktop specifications (XDG base directories for config/cache: `~/.config/`, `~/.local/share/`).
+
 ### 6. Separate the concerns
 * **Never write utility functions:** Never write utility methods or functions in logic directly there will be always separate directory for all utils and reusable code.
+
+### 7. Strict Emoji Prohibition
+* **No Emojis:** You are strictly forbidden from adding any emojis in any markdown file, documentation, code comments, PR descriptions, commit messages, or responses. Maintain clean, professional, plain text styling at all times.

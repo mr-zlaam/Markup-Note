@@ -15,7 +15,7 @@
 
 ---
 
-## ⚡ Why Markup Notes?
+## Why Markup Notes?
 
 Most modern note-taking apps wrap Chromium and consume **300 MB to 1 GB of RAM** just to edit text files. 
 
@@ -27,7 +27,7 @@ Most modern note-taking apps wrap Chromium and consume **300 MB to 1 GB of RAM**
 
 ---
 
-## ✨ Features
+## Features
 
 - **Intuitive Markdown Editor:** Seamless distraction-free writing with instant live preview.
 - **Notion-Style Slash Commands (`/`):** Type `/` anywhere to summon formatting blocks:
@@ -38,14 +38,14 @@ Most modern note-taking apps wrap Chromium and consume **300 MB to 1 GB of RAM**
 - **Deep Nested Folders:** Organize notes across multi-level directory trees with smooth chevron toggle animations, inline renaming, and duplicate-name guards.
 - **Fast Find & Replace (`Ctrl+F`):** Case-sensitive, whole-word, and regex search with live match counting and immediate navigation.
 - **Multi-Format Export:** Export your notes directly to:
-  - 📄 **PDF** (High-quality print layout with custom CSS styles)
-  - 🌐 **HTML** (Embedded Dark and Light themes)
-  - 📝 **Markdown** (Raw markdown bundle)
+  - **PDF** (High-quality print layout with custom CSS styles)
+  - **HTML** (Embedded Dark and Light themes)
+  - **Markdown** (Raw markdown bundle)
 - **Safe & Atomic Disk Writes:** Saves use atomic file replacement to guarantee zero file corruption even on unexpected power loss or crashes.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Download AppImage (Recommended)
 
@@ -85,7 +85,7 @@ python3 main.py
 
 ---
 
-## 🖥️ Desktop Integration
+## Desktop Integration
 
 To add **Markup Notes** to your Linux application menu (GNOME, COSMIC, KDE, rofi, wofi):
 
@@ -97,7 +97,7 @@ This installs high-DPI squircle icons into `~/.local/share/icons/hicolor/` and s
 
 ---
 
-## 🛠️ Building the Standalone AppImage
+## Building the Standalone AppImage
 
 To build a standalone, self-contained `MarkupNotes-x86_64.AppImage` locally:
 
@@ -117,7 +117,7 @@ The script automatically:
 
 ---
 
-## 📦 Flatpak Packaging
+## Flatpak Packaging
 
 Markup Notes can be packaged and run as a native, sandboxed Flatpak targeting the **KDE 6.11** runtime.
 
@@ -138,7 +138,7 @@ bash scripts/build_flatpak.sh --bundle
 
 ---
 
-## 📁 Project Architecture
+## Project Architecture
 
 ```text
 markup-notes/
@@ -160,6 +160,6 @@ markup-notes/
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the **GNU General Public License version 2.0 (GPL-2.0-only)** — the same license that powers the Linux Kernel. See the [LICENSE](LICENSE) file for details.

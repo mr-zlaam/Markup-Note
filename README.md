@@ -49,7 +49,7 @@ Most modern note-taking apps wrap Chromium and consume **300 MB to 1 GB of RAM**
 
 ### 1. Download AppImage (Recommended)
 
-Download the standalone executable from the [Releases](https://github.com/mr-zlaam/Markup-Note/releases) page:
+Download the standalone executable from the [Releases](https://github.com/mr-zlaam/MarkupNotes/releases) page:
 
 ```bash
 chmod +x MarkupNotes-x86_64.AppImage
@@ -69,8 +69,8 @@ chmod +x MarkupNotes-x86_64.AppImage
 
 #### Clone & Run
 ```bash
-git clone https://github.com/mr-zlaam/Markup-Note.git
-cd Markup-Note
+git clone https://github.com/mr-zlaam/MarkupNotes.git
+cd MarkupNotes
 
 # Using uv (fastest)
 uv sync

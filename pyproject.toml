@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-2.0-only"
 authors = [
-    { name = "zlaam" }
+    { name = "mr-zlaam" }
 ]
 keywords = ["markdown", "notes", "pyqt6", "linux", "desktop", "wayland"]
 classifiers = [

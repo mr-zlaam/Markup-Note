@@ -117,6 +117,27 @@ The script automatically:
 
 ---
 
+## 📦 Flatpak Packaging
+
+Markup Notes can be packaged and run as a native, sandboxed Flatpak targeting the **KDE 6.11** runtime.
+
+### Prerequisites
+Ensure the KDE 6.11 Platform and SDK are installed:
+```bash
+flatpak install flathub org.kde.Platform//6.11 org.kde.Sdk//6.11
+```
+
+### Build & Run
+```bash
+# Build, install to user scope, and launch immediately
+bash scripts/build_flatpak.sh --run
+
+# Export a standalone single-file .flatpak bundle
+bash scripts/build_flatpak.sh --bundle
+```
+
+---
+
 ## 📁 Project Architecture
 
 ```text

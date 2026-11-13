@@ -38,7 +38,9 @@ except Exception as import_err:
 def main() -> None:
     """Launch the Markup Notes application with clean Ctrl+C terminal signal handling."""
     app = QApplication(sys.argv)
-    app.setApplicationName("Markup Notes")
+    desktop_id = os.environ.get("FLATPAK_ID", "io.github.mr_zlaam.MarkupNotes")
+    app.setDesktopFileName(desktop_id)
+    app.setApplicationName(desktop_id)
     app.setOrganizationName("MarkupNotes")
 
     app_icon = QIcon()

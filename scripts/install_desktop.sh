@@ -14,26 +14,32 @@ echo "==> Installing Markup Notes desktop launcher and icons..."
 ICONS_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
 mkdir -p "$ICONS_DEST"
 cp -r "$PROJECT_ROOT/assets/icons/hicolor" "$ICONS_DEST/"
+for size in 16 24 32 48 64 128 256 512; do
+    cp "$PROJECT_ROOT/assets/icons/hicolor/${size}x${size}/apps/markup-notes.png" \
+       "$ICONS_DEST/hicolor/${size}x${size}/apps/io.github.mr_zlaam.MarkupNotes.png" 2>/dev/null || true
+done
 
 # 2. Install desktop entry
 APPS_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$APPS_DEST"
 
-cat << EOF > "$APPS_DEST/markup-notes.desktop"
+cat << EOF > "$APPS_DEST/io.github.mr_zlaam.MarkupNotes.desktop"
 [Desktop Entry]
 Name=Markup Notes
-Comment=Notes App for Electron haters
+Comment=A fast, lightweight, native Markdown note-taking app
 Exec=python3 $PROJECT_ROOT/main.py %F
-Icon=markup-notes
+Icon=io.github.mr_zlaam.MarkupNotes
 Terminal=false
 Type=Application
-Categories=Office;Utility;TextEditor;
+Categories=Office;TextEditor;
 Keywords=markdown;notes;editor;text;
 StartupNotify=true
+StartupWMClass=io.github.mr_zlaam.MarkupNotes
 MimeType=text/markdown;text/plain;
 EOF
 
-chmod +x "$APPS_DEST/markup-notes.desktop"
+chmod +x "$APPS_DEST/io.github.mr_zlaam.MarkupNotes.desktop"
+ln -sf "$APPS_DEST/io.github.mr_zlaam.MarkupNotes.desktop" "$APPS_DEST/markup-notes.desktop"
 
 # 3. Update icon and desktop databases if utilities exist
 if command -v update-desktop-database >/dev/null 2>&1; then

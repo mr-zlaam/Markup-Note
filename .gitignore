@@ -17,6 +17,8 @@ build/
 dist/
 *.spec
 *.AppImage
+.flatpak-builder/
+*.flatpak
 
 # Local user data & notes
 notes/

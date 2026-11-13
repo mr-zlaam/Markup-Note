@@ -188,24 +188,28 @@ echo "    Pruned $PRUNED_COUNT host libraries from AppDir (AppImage will dynamic
 cp -r "$PROJECT_ROOT/assets/icons/hicolor" "$APPDIR/usr/share/icons/"
 # Copy root icons for AppImage specification
 cp "$PROJECT_ROOT/assets/icons/markup-notes-512x512.png" "$APPDIR/markup-notes.png"
+cp "$PROJECT_ROOT/assets/icons/markup-notes-512x512.png" "$APPDIR/io.github.mr_zlaam.MarkupNotes.png"
 cp "$PROJECT_ROOT/assets/icons/markup-notes-512x512.png" "$APPDIR/.DirIcon"
 
 # Write standard desktop entry inside AppDir
 cat << 'EOF' > "$APPDIR/markup-notes.desktop"
 [Desktop Entry]
 Name=Markup Notes
-Comment=Notes App for Electron haters
+Comment=A fast, lightweight, native Markdown note-taking app
 Exec=markup-notes %F
 Icon=markup-notes
 Terminal=false
 Type=Application
-Categories=Office;Utility;TextEditor;
+Categories=Office;TextEditor;
 Keywords=markdown;notes;editor;text;
 StartupNotify=true
+StartupWMClass=io.github.mr_zlaam.MarkupNotes
 MimeType=text/markdown;text/plain;
 EOF
 
 cp "$APPDIR/markup-notes.desktop" "$APPDIR/usr/share/applications/"
+cp "$APPDIR/markup-notes.desktop" "$APPDIR/usr/share/applications/io.github.mr_zlaam.MarkupNotes.desktop"
+cp "$APPDIR/markup-notes.desktop" "$APPDIR/io.github.mr_zlaam.MarkupNotes.desktop"
 
 # Write standard AppRun launcher with preflight checks and crash diagnostics
 cat << 'EOF' > "$APPDIR/AppRun"

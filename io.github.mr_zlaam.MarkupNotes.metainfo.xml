@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mr_zlaam.MarkupNotes</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-only</project_license>
+  <name>Markup Notes</name>
+  <summary>A fast, lightweight, native Markdown note-taking app</summary>
+  
+  <description>
+    <p>
+      Markup Notes is a distraction-free, native Markdown note-taking application designed
+      for performance, speed, and privacy. Built with Qt6 and Python, it provides instant
+      startup, rich live Markdown formatting, Math / LaTeX equations, Mermaid diagrams,
+      interactive task lists, and seamless Git version control backups.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Fast, responsive, native desktop performance without Electron overhead</li>
+      <li>Instant live Markdown formatting with inline LaTeX math and Mermaid diagrams</li>
+      <li>Distraction-free editing with automatic note saving and folder organization</li>
+      <li>Built-in Git version control with local history snapshots and GitHub backup</li>
+      <li>Full dark mode support with modern native Linux desktop integration</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.mr_zlaam.MarkupNotes.desktop</launchable>
+
+  <url type="homepage">https://github.com/mr-zlaam/Note-Taker-Markdown</url>
+  <url type="bugtracker">https://github.com/mr-zlaam/Note-Taker-Markdown/issues</url>
+  <url type="vcs-browser">https://github.com/mr-zlaam/Note-Taker-Markdown</url>
+
+  <developer id="io.github.mr_zlaam">
+    <name>mr-zlaam</name>
+  </developer>
+
+  <categories>
+    <category>Office</category>
+    <category>TextEditor</category>
+  </categories>
+
+  <provides>
+    <binary>markup-notes</binary>
+    <mediatype>text/markdown</mediatype>
+    <mediatype>text/plain</mediatype>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-11-13">
+      <description>
+        <p>Initial release of Markup Notes.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -91,18 +91,18 @@ modules:
         done
     sources:
       - type: file
-        path: main.py
+        path: ../main.py
       - type: dir
-        path: ui
+        path: ../ui
         dest: ui
       - type: dir
-        path: core
+        path: ../core
         dest: core
       - type: dir
-        path: utils
+        path: ../utils
         dest: utils
       - type: dir
-        path: assets
+        path: ../assets
         dest: assets
       - type: file
         path: io.github.mr_zlaam.MarkupNotes.desktop

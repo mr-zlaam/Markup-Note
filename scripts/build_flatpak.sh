@@ -9,7 +9,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 APP_ID="io.github.mr_zlaam.MarkupNotes"
-MANIFEST="io.github.mr_zlaam.MarkupNotes.yml"
+MANIFEST="${PROJECT_ROOT}/flatpak/io.github.mr_zlaam.MarkupNotes.yml"
 BUILD_DIR="${PROJECT_ROOT}/build/flatpak-build"
 REPO_DIR="${PROJECT_ROOT}/build/flatpak-repo"
 BUNDLE_FILE="${PROJECT_ROOT}/MarkupNotes-x86_64.flatpak"

@@ -558,6 +558,7 @@ class MainWindow(QMainWindow):
             prompt="Enter new folder name:",
             default=folder_path.name,
             confirm_text="Rename",
+            icon_type="rename",
         )
         if ok and new_name and new_name != folder_path.name:
             safe_name = self.storage.sanitize_filename(new_name)
@@ -649,6 +650,7 @@ class MainWindow(QMainWindow):
             prompt="Enter new note title:",
             default=note.title,
             confirm_text="Rename",
+            icon_type="rename",
         )
         if ok and new_title and new_title != note.title:
             self._is_saving_internally = True

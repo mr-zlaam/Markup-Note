@@ -20,14 +20,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.context_menu import ModernContextMenu
 from ui.dialogs import ModernColorDialog, ModernInputDialog
 from utils.icons import (
     PRESET_COLORS,
     create_all_notes_icon,
     create_check_icon,
+    create_checkbox_icon,
     create_close_icon,
     create_color_circle_icon,
+    create_edit_icon,
     create_folder_icon,
+    create_open_folder_icon,
     create_plus_icon,
     create_sidebar_toggle_icon,
     create_trash_icon,
@@ -180,6 +184,8 @@ class FolderSidebar(QWidget):
         self.tree_widget.setIndentation(16)
         self.tree_widget.setAnimated(True)
         self.tree_widget.setIconSize(QSize(18, 18))
+        self.tree_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tree_widget.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.tree_widget.setVerticalScrollMode(QTreeWidget.ScrollMode.ScrollPerPixel)
         self.tree_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         QScroller.grabGesture(
@@ -188,6 +194,8 @@ class FolderSidebar(QWidget):
 
         self.tree_widget.itemSelectionChanged.connect(self._on_selection_changed)
         self.tree_widget.itemClicked.connect(self._on_item_clicked)
+        self.tree_widget.itemExpanded.connect(self._on_item_expanded)
+        self.tree_widget.itemCollapsed.connect(self._on_item_collapsed)
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self._on_context_menu)
 
@@ -246,47 +254,85 @@ class FolderSidebar(QWidget):
             self.delete_folders_batch_requested.emit(list(self._selected_folders))
 
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int = 0) -> None:
-        """Toggle folder selection if in selection mode."""
-        if not self._is_selection_mode:
+        """Handle single-click on folder tree item."""
+        if self._is_selection_mode:
+            folder = item.data(0, Qt.ItemDataRole.UserRole)
+            if folder is None:
+                # 'All Notes' cannot be selected for folder deletion
+                return
+            if folder in self._selected_folders:
+                self._selected_folders.remove(folder)
+            else:
+                self._selected_folders.add(folder)
+            self._update_folder_items()
+            self._update_batch_bar()
             return
+
         folder = item.data(0, Qt.ItemDataRole.UserRole)
         if folder is None:
-            # 'All Notes' cannot be selected for folder deletion
+            # 'All Notes' pinned root
             return
-        if folder in self._selected_folders:
-            self._selected_folders.remove(folder)
+
+        folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
+
+        if item.childCount() > 0:
+            # Folder with subfolders (has chevron branch indicator):
+            # Toggle expansion state on single click
+            new_expanded = not item.isExpanded()
+            item.setExpanded(new_expanded)
+            item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=new_expanded))
         else:
-            self._selected_folders.add(folder)
-        self._update_folder_items()
-        self._update_batch_bar()
+            # Leaf folder without subfolders:
+            # Single click toggles open and closed state
+            current_open = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if current_open is None:
+                current_open = (self.tree_widget.currentItem() == item)
+            new_open = not current_open
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, new_open)
+            item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=new_open))
 
     def _on_context_menu(self, pos: QPoint) -> None:
-        """Display sleek context menu for folder."""
+        """Display sleek context menu for folder actions or empty space."""
         item = self.tree_widget.itemAt(pos)
+        menu = ModernContextMenu(self)
+
         if item is None:
+            # Right-click in empty space below folders
+            new_folder_act = menu.addAction(create_plus_icon("#8e8e93", size=14), "New Folder...")
+            select_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select Notes...")
+
+            action = menu.exec(self.tree_widget.viewport().mapToGlobal(pos))
+            if action == new_folder_act:
+                self._on_add_folder_clicked()
+            elif action == select_act:
+                self.select_all_notes_requested.emit()
             return
 
         folder: Optional[Path] = item.data(0, Qt.ItemDataRole.UserRole)
         folder_name = folder.name if folder is not None else "All Notes"
-        menu = QMenu(self)
 
         if folder is not None:
             # Custom Folder or Subfolder
-            new_subfolder_act = menu.addAction("New Subfolder...")
-            rename_act = menu.addAction("Rename Folder...")
-            select_act = menu.addAction("Select...")
+            new_subfolder_act = menu.addAction(create_plus_icon("#8e8e93", size=14), "New Subfolder...")
+            rename_act = menu.addAction(create_edit_icon("#8e8e93", size=14), "Rename Folder...")
+            select_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select...")
 
             # Color options submenu
             color_menu = menu.addMenu("Color")
+            color_menu.menuAction().setIcon(create_color_circle_icon("#bf5af2", size=14))
             self._populate_color_menu(color_menu, folder_name)
 
             menu.addSeparator()
-            delete_act = menu.addAction("Delete Folder")
+            delete_act = menu.addAction(create_trash_icon("#ff453a", size=14), "Delete Folder")
+            delete_act.setProperty("is_destructive", True)
 
             action = menu.exec(self.tree_widget.viewport().mapToGlobal(pos))
             if action == new_subfolder_act:
                 subfolder_name, ok = ModernInputDialog.get_text(
-                    self, "New Subfolder", f"Create subfolder inside '{folder.name}':"
+                    self,
+                    "New Subfolder",
+                    f"Create subfolder inside '{folder.name}':",
+                    icon_type="folder",
                 )
                 if ok and subfolder_name.strip():
                     self.create_folder_requested.emit(subfolder_name.strip(), folder)
@@ -298,10 +344,11 @@ class FolderSidebar(QWidget):
                 self.delete_folder_requested.emit(folder)
         else:
             # 'All Notes'
-            new_folder_act = menu.addAction("New Folder...")
-            select_act = menu.addAction("Select Notes...")
+            new_folder_act = menu.addAction(create_plus_icon("#8e8e93", size=14), "New Folder...")
+            select_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select Notes...")
 
             color_menu = menu.addMenu("Color")
+            color_menu.menuAction().setIcon(create_color_circle_icon("#bf5af2", size=14))
             self._populate_color_menu(color_menu, folder_name)
 
             action = menu.exec(self.tree_widget.viewport().mapToGlobal(pos))
@@ -378,12 +425,18 @@ class FolderSidebar(QWidget):
                     item.setIcon(0, create_uncheck_icon(size=14))
             else:
                 folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
-                item.setIcon(0, create_folder_icon(color=folder_color, size=16))
+                is_selected = current_selection is not None and folder == current_selection
+                item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=is_selected))
 
             parent_path = folder.parent
             if parent_path in item_map:
                 item_map[parent_path].addChild(item)
                 item_map[parent_path].setExpanded(True)
+                # Keep parent icon open since it is expanded
+                parent_folder = item_map[parent_path].data(0, Qt.ItemDataRole.UserRole)
+                if parent_folder is not None and not self._is_selection_mode:
+                    p_col = self._folder_colors.get(parent_folder.name) or "#e5a93c"
+                    item_map[parent_path].setIcon(0, create_folder_icon(color=p_col, size=16, is_open=True))
             else:
                 self.tree_widget.addTopLevelItem(item)
 
@@ -397,6 +450,25 @@ class FolderSidebar(QWidget):
 
         self.tree_widget.blockSignals(False)
 
+        if not self._is_selection_mode:
+            current_item = self.tree_widget.currentItem()
+            for i in range(self.tree_widget.topLevelItemCount()):
+                self._refresh_folder_icon_state(self.tree_widget.topLevelItem(i), current_item)
+
+    def _on_item_expanded(self, item: QTreeWidgetItem) -> None:
+        """Update folder icon to open state when expanded."""
+        folder = item.data(0, Qt.ItemDataRole.UserRole)
+        if folder is not None and not self._is_selection_mode:
+            folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
+            item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=True))
+
+    def _on_item_collapsed(self, item: QTreeWidgetItem) -> None:
+        """Update folder icon to closed state when collapsed."""
+        folder = item.data(0, Qt.ItemDataRole.UserRole)
+        if folder is not None and not self._is_selection_mode:
+            folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
+            item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=False))
+
     def _on_selection_changed(self) -> None:
         if self._is_selection_mode:
             return
@@ -404,6 +476,25 @@ class FolderSidebar(QWidget):
         if current_item is not None:
             folder_path = current_item.data(0, Qt.ItemDataRole.UserRole)
             self.folder_selected.emit(folder_path)
+
+        # Refresh open/closed state on all folder items
+        for i in range(self.tree_widget.topLevelItemCount()):
+            self._refresh_folder_icon_state(self.tree_widget.topLevelItem(i), current_item)
+
+    def _refresh_folder_icon_state(
+        self, item: QTreeWidgetItem, current_item: Optional[QTreeWidgetItem]
+    ) -> None:
+        folder = item.data(0, Qt.ItemDataRole.UserRole)
+        if folder is not None and not self._is_selection_mode:
+            folder_color = self._folder_colors.get(folder.name) or "#e5a93c"
+            if item.childCount() > 0:
+                is_open = item.isExpanded()
+            else:
+                is_open = (item == current_item)
+                item.setData(0, Qt.ItemDataRole.UserRole + 1, is_open)
+            item.setIcon(0, create_folder_icon(color=folder_color, size=16, is_open=is_open))
+        for c in range(item.childCount()):
+            self._refresh_folder_icon_state(item.child(c), current_item)
 
     def _on_add_folder_clicked(self) -> None:
         # If currently a folder is selected, ask whether to create inside or at root
@@ -420,6 +511,6 @@ class FolderSidebar(QWidget):
             title = f"New Subfolder inside '{current_folder.name}'"
             prompt = f"Enter subfolder name for '{current_folder.name}':"
 
-        folder_name, ok = ModernInputDialog.get_text(self, title, prompt)
+        folder_name, ok = ModernInputDialog.get_text(self, title, prompt, icon_type="folder")
         if ok and folder_name.strip():
             self.create_folder_requested.emit(folder_name.strip(), current_folder)

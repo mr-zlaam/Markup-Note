@@ -1,13 +1,20 @@
-"""Native high-DPI vector icon generation utilities for Note Taker UI."""
+"""Native high-DPI vector icon generation utilities for Note Taker UI.
+
+Powered by Lucide vector icons on a standardized 24x24 optical grid.
+No third-party packages required; renders directly via PyQt6.QtSvg.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import QByteArray, QPointF, QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
+
+from utils.lucide_icons import render_lucide_icon, render_lucide_pixmap
 
 
 def create_search_icon(
@@ -16,33 +23,7 @@ def create_search_icon(
     stroke_width: float = 1.6,
 ) -> QIcon:
     """Generate a crisp magnifying glass search vector icon."""
-    pixmap = QPixmap(size * 2, size * 2)  # 2x for high-DPI crispness
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Circle (glass head)
-    glass_radius = 4.2
-    glass_center_x = 6.2
-    glass_center_y = 6.2
-    painter.drawEllipse(QPointF(glass_center_x, glass_center_y), glass_radius, glass_radius)
-
-    # Handle (slanted line at bottom-right)
-    handle_start_x = 9.2
-    handle_start_y = 9.2
-    handle_end_x = 13.5
-    handle_end_y = 13.5
-    painter.drawLine(QPointF(handle_start_x, handle_start_y), QPointF(handle_end_x, handle_end_y))
-
-    painter.end()
-    return QIcon(pixmap)
+    return render_lucide_icon("search", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_plus_icon(
@@ -51,27 +32,7 @@ def create_plus_icon(
     stroke_width: float = 1.8,
 ) -> QIcon:
     """Generate a clean vector plus (+) icon with rounded terminal caps."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-
-    mid = float(size) / 2.0
-    inset = 3.5
-
-    # Horizontal bar
-    painter.drawLine(QPointF(inset, mid), QPointF(float(size) - inset, mid))
-    # Vertical bar
-    painter.drawLine(QPointF(mid, inset), QPointF(mid, float(size) - inset))
-
-    painter.end()
-    return QIcon(pixmap)
+    return render_lucide_icon("plus", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_sidebar_toggle_icon(
@@ -81,179 +42,50 @@ def create_sidebar_toggle_icon(
     sidebar_on_left: bool = True,
     fill_sidebar: bool = True,
 ) -> QIcon:
-    """Generate a modern window sidebar toggle vector icon (similar to VS Code / Apple Notes)."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Outer window frame
-    frame = QRectF(1.5, 2.0, float(size) - 3.0, float(size) - 4.0)
-    painter.drawRoundedRect(frame, 2.5, 2.5)
-
-    # Dividing vertical bar representing the sidebar
-    bar_x = frame.left() + frame.width() * 0.35 if sidebar_on_left else frame.right() - frame.width() * 0.35
-    painter.drawLine(QPointF(bar_x, frame.top()), QPointF(bar_x, frame.bottom()))
-
-    # If active, fill the sidebar portion subtly
-    if fill_sidebar:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(color))
-        if sidebar_on_left:
-            sb_rect = QRectF(frame.left() + 1.2, frame.top() + 1.2, bar_x - frame.left() - 1.2, frame.height() - 2.4)
-        else:
-            sb_rect = QRectF(bar_x, frame.top() + 1.2, frame.right() - bar_x - 1.2, frame.height() - 2.4)
-        painter.drawRoundedRect(sb_rect, 1.2, 1.2)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a modern window sidebar toggle vector icon."""
+    return render_lucide_icon("panel-left", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_notes_toggle_icon(
     color: str = "#8e8e93",
     size: int = 16,
     stroke_width: float = 1.4,
+    fill_notes_pane: bool = True,
 ) -> QIcon:
-    """Generate a 3-pane layout toggle vector icon with middle pane highlighted."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Outer window frame
-    frame = QRectF(1.5, 2.0, float(size) - 3.0, float(size) - 4.0)
-    painter.drawRoundedRect(frame, 2.5, 2.5)
-
-    # Two dividing bars for 3 panes
-    bar1_x = frame.left() + frame.width() * 0.3
-    bar2_x = frame.left() + frame.width() * 0.65
-    painter.drawLine(QPointF(bar1_x, frame.top()), QPointF(bar1_x, frame.bottom()))
-    painter.drawLine(QPointF(bar2_x, frame.top()), QPointF(bar2_x, frame.bottom()))
-
-    # Highlight middle pane (notes list) subtly
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    mid_rect = QRectF(bar1_x + 1.0, frame.top() + 1.2, bar2_x - bar1_x - 1.0, frame.height() - 2.4)
-    painter.drawRoundedRect(mid_rect, 1.0, 1.0)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a modern notes-list pane toggle vector icon."""
+    return render_lucide_icon("panel-left-close", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_chevron_icon(
-    direction: str = "right",
+    direction: str = "down",
     color: str = "#8e8e93",
-    size: int = 16,
-    stroke_width: float = 1.6,
+    size: int = 14,
+    stroke_width: float = 1.8,
 ) -> QIcon:
-    """Generate a clean chevron arrow icon (left, right, up, down)."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-
-    mid = float(size) / 2.0
-    path = QPainterPath()
-
-    if direction == "left":
-        path.moveTo(mid + 2.5, mid - 4.5)
-        path.lineTo(mid - 2.5, mid)
-        path.lineTo(mid + 2.5, mid + 4.5)
-    elif direction == "right":
-        path.moveTo(mid - 2.5, mid - 4.5)
-        path.lineTo(mid + 2.5, mid)
-        path.lineTo(mid - 2.5, mid + 4.5)
-    elif direction == "up":
-        path.moveTo(mid - 4.5, mid + 2.5)
-        path.lineTo(mid, mid - 2.5)
-        path.lineTo(mid + 4.5, mid + 2.5)
-    else:  # down
-        path.moveTo(mid - 4.5, mid - 2.5)
-        path.lineTo(mid, mid + 2.5)
-        path.lineTo(mid + 4.5, mid - 2.5)
-
-    painter.drawPath(path)
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean chevron vector icon for collapsible headers."""
+    name = f"chevron-{direction}"
+    return render_lucide_icon(name, color=color, size=size, stroke_width=stroke_width)
 
 
 def create_check_icon(
-    color: str = "#ffffff",
-    bg_color: str = "#0a84ff",
+    color: str = "#0a84ff",
+    bg_color: Optional[str] = None,
     size: int = 16,
+    stroke_width: float = 1.8,
 ) -> QIcon:
-    """Generate a crisp circular checkmark icon for selected items."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Filled circle
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(bg_color))
-    painter.drawEllipse(QRectF(1.0, 1.0, float(size) - 2.0, float(size) - 2.0))
-
-    # Checkmark
-    pen = QPen(QColor(color), 1.6)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    path = QPainterPath()
-    path.moveTo(4.5, float(size) * 0.52)
-    path.lineTo(float(size) * 0.42, float(size) * 0.72)
-    path.lineTo(float(size) - 4.5, float(size) * 0.32)
-    painter.drawPath(path)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a crisp checkmark vector icon."""
+    return render_lucide_icon("check", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_uncheck_icon(
-    border_color: str = "#5c5c64",
-    size: int = 16,
+    color: str = "#484852",
+    border_color: Optional[str] = None,
+    size: int = 14,
+    stroke_width: float = 1.4,
 ) -> QIcon:
-    """Generate an empty circular icon for unselected items."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(border_color), 1.5)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawEllipse(QRectF(1.5, 1.5, float(size) - 3.0, float(size) - 3.0))
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate an unchecked empty square indicator icon."""
+    col = border_color if border_color is not None else color
+    return render_lucide_icon("square", color=col, size=size, stroke_width=stroke_width)
 
 
 def create_trash_icon(
@@ -261,112 +93,33 @@ def create_trash_icon(
     size: int = 16,
 ) -> QIcon:
     """Generate a clean vector trash can icon for delete actions."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), 1.4)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Can body
-    path = QPainterPath()
-    path.moveTo(4.0, 5.0)
-    path.lineTo(4.8, 14.0)
-    path.lineTo(11.2, 14.0)
-    path.lineTo(12.0, 5.0)
-    painter.drawPath(path)
-
-    # Lid line
-    painter.drawLine(QPointF(2.5, 5.0), QPointF(13.5, 5.0))
-    # Lid handle
-    painter.drawLine(QPointF(6.0, 3.0), QPointF(10.0, 3.0))
-
-    # Inner ribs
-    painter.drawLine(QPointF(6.5, 7.5), QPointF(6.8, 11.5))
-    painter.drawLine(QPointF(9.5, 7.5), QPointF(9.2, 11.5))
-
-    painter.end()
-    return QIcon(pixmap)
+    return render_lucide_icon("trash-2", color=color, size=size, stroke_width=1.6)
 
 
 def create_done_icon(
-    color: str = "#0a84ff",
+    color: str = "#8e8e93",
     size: int = 16,
 ) -> QIcon:
-    """Generate a clean vector checkmark icon for done actions."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), 1.8)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    path = QPainterPath()
-    path.moveTo(3.5, 8.5)
-    path.lineTo(6.8, 12.0)
-    path.lineTo(12.8, 4.5)
-    painter.drawPath(path)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean 'Done' check-circle action icon."""
+    return render_lucide_icon("check-circle-2", color=color, size=size, stroke_width=1.6)
 
 
 def create_close_icon(
     color: str = "#8e8e93",
-    size: int = 16,
+    size: int = 14,
     stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a clean vector X (cross) icon for canceling/closing."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-
-    inset = 4.5
-    painter.drawLine(QPointF(inset, inset), QPointF(float(size) - inset, float(size) - inset))
-    painter.drawLine(QPointF(float(size) - inset, inset), QPointF(inset, float(size) - inset))
-
-    painter.end()
-    return QIcon(pixmap)
-
-
-# Curated color presets for folders and notes (name, hex_code or None for default)
-PRESET_COLORS: List[Tuple[str, Optional[str]]] = [
-    ("Default", None),
-    ("Blue", "#0a84ff"),
-    ("Purple", "#bf5af2"),
-    ("Green", "#30d158"),
-    ("Yellow", "#ffd60a"),
-    ("Orange", "#ff9f0a"),
-    ("Red", "#ff453a"),
-    ("Teal", "#64d2ff"),
-    ("Pink", "#ff375f"),
-]
+    """Generate a clean vector close (x) icon."""
+    return render_lucide_icon("x", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_color_circle_icon(
+    hex_color: str = "#0a84ff",
     color: Optional[str] = None,
     size: int = 12,
 ) -> QIcon:
-    """Generate a clean circular color swatch icon for menus."""
+    """Generate a smooth antialiased circular color badge for menus."""
+    target_color = color if color is not None else hex_color
     pixmap = QPixmap(size * 2, size * 2)
     pixmap.setDevicePixelRatio(2.0)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -374,19 +127,9 @@ def create_color_circle_icon(
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    rect = QRectF(1.0, 1.0, float(size) - 2.0, float(size) - 2.0)
-    if color is None:
-        painter.setPen(QPen(QColor("#8e8e93"), 1.2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(rect)
-        painter.drawLine(
-            QPointF(rect.left() + 2.0, rect.top() + 2.0),
-            QPointF(rect.right() - 2.0, rect.bottom() - 2.0),
-        )
-    else:
-        painter.setPen(QPen(QColor(color).lighter(120), 0.8))
-        painter.setBrush(QBrush(QColor(color)))
-        painter.drawEllipse(rect)
+    painter.setPen(QPen(QColor("#404048"), 1.0))
+    painter.setBrush(QBrush(QColor(target_color)))
+    painter.drawEllipse(QRectF(1.0, 1.0, float(size) - 2.0, float(size) - 2.0))
 
     painter.end()
     return QIcon(pixmap)
@@ -395,38 +138,26 @@ def create_color_circle_icon(
 def create_folder_icon(
     color: str = "#e5a93c",
     size: int = 16,
+    is_open: bool = False,
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp, native vector folder icon with custom tint."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
+    """Generate a crisp, high-precision vector folder icon (open or closed state)."""
+    name = "folder-open" if is_open else "folder"
+    return render_lucide_icon(
+        name,
+        color=color,
+        size=size,
+        stroke_width=stroke_width,
+    )
 
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    # Folder outline and tab
-    path = QPainterPath()
-    path.moveTo(2.0, 4.0)
-    path.lineTo(2.0, 12.0)
-    path.arcTo(QRectF(2.0, 10.5, 2.5, 2.5), 180, -90)
-    path.lineTo(12.5, 13.0)
-    path.arcTo(QRectF(11.5, 10.5, 2.5, 2.5), 270, -90)
-    path.lineTo(14.0, 5.5)
-    path.arcTo(QRectF(11.5, 3.5, 2.5, 2.5), 0, 90)
-    path.lineTo(7.5, 3.5)
-    path.lineTo(6.2, 2.5)
-    path.arcTo(QRectF(4.2, 2.0, 2.0, 2.0), 90, 90)
-    path.lineTo(2.0, 3.8)
-    path.closeSubpath()
-
-    painter.setPen(QPen(QColor(color), 1.25))
-    fill_col = QColor(color)
-    fill_col.setAlpha(55)
-    painter.setBrush(QBrush(fill_col))
-    painter.drawPath(path)
-
-    painter.end()
-    return QIcon(pixmap)
+def create_open_folder_icon(
+    color: str = "#e5a93c",
+    size: int = 16,
+    stroke_width: float = 1.6,
+) -> QIcon:
+    """Convenience helper to generate an open state vector folder icon."""
+    return create_folder_icon(color=color, size=size, is_open=True, stroke_width=stroke_width)
 
 
 def create_all_notes_icon(
@@ -434,115 +165,46 @@ def create_all_notes_icon(
     size: int = 16,
 ) -> QIcon:
     """Generate a crisp vector icon for 'All Notes' (stacked notes tray)."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Back card
-    painter.setPen(QPen(QColor(color), 1.1))
-    fill_back = QColor(color)
-    fill_back.setAlpha(20)
-    painter.setBrush(QBrush(fill_back))
-    painter.drawRoundedRect(QRectF(4.0, 2.0, 9.5, 9.5), 2.0, 2.0)
-
-    # Front card
-    fill_front = QColor(color)
-    fill_front.setAlpha(45)
-    painter.setBrush(QBrush(fill_front))
-    painter.drawRoundedRect(QRectF(2.0, 4.5, 9.5, 9.5), 2.0, 2.0)
-
-    # Content lines on front card
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    line_pen = QPen(QColor(color), 1.0)
-    line_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(line_pen)
-    painter.drawLine(QPointF(4.0, 7.5), QPointF(9.5, 7.5))
-    painter.drawLine(QPointF(4.0, 9.8), QPointF(8.0, 9.8))
-
-    painter.end()
-    return QIcon(pixmap)
+    return render_lucide_icon("files", color=color, size=size, stroke_width=1.6)
 
 
 def create_markdown_icon(
     color: str = "#8e8e93",
     size: int = 14,
 ) -> QIcon:
-    """Generate a crisp vector Markdown emblem (rounded box, 'M', and '↓')."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Outer rounded box
-    rect = QRectF(1.0, 2.0, 12.0, 10.0)
-    pen = QPen(QColor(color), 1.1)
-    painter.setPen(pen)
-    fill = QColor(color)
-    fill.setAlpha(25)
-    painter.setBrush(QBrush(fill))
-    painter.drawRoundedRect(rect, 2.0, 2.0)
-
-    # 'M' on left
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    m_pen = QPen(QColor(color), 1.15)
-    m_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    m_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(m_pen)
-
-    m_path = QPainterPath()
-    m_path.moveTo(2.8, 9.5)
-    m_path.lineTo(2.8, 4.5)
-    m_path.lineTo(4.8, 7.0)
-    m_path.lineTo(6.8, 4.5)
-    m_path.lineTo(6.8, 9.5)
-    painter.drawPath(m_path)
-
-    # Arrow '↓' on right
-    painter.drawLine(QPointF(10.0, 4.5), QPointF(10.0, 9.5))
-    arr_path = QPainterPath()
-    arr_path.moveTo(8.5, 7.8)
-    arr_path.lineTo(10.0, 9.5)
-    arr_path.lineTo(11.5, 7.8)
-    painter.drawPath(arr_path)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a crisp vector Markdown note emblem."""
+    return render_lucide_icon("file-text", color=color, size=size, stroke_width=1.6)
 
 
 def draw_checkbox_badge(
     painter: QPainter,
     badge_rect: QRect,
     color: str = "#0a84ff",
-    box_color: str = "#8e8e93",
+    box_color: Optional[str] = None,
 ) -> None:
-    """Draw a crisp vector checkbox icon with checkmark centered in badge_rect."""
-    cx = float(badge_rect.center().x())
-    cy = float(badge_rect.center().y())
-    box_size = 15.0
-    half = box_size / 2.0
-    box_rect = QRectF(cx - half, cy - half, box_size, box_size)
-
-    # Rounded box
-    box_pen = QPen(QColor(box_color), 1.4)
-    painter.setPen(box_pen)
+    """Draw a standalone completed-checkbox badge into an existing painter."""
+    pen = QPen(QColor(box_color or color), 1.6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(box_rect, 3.5, 3.5)
 
-    # Checkmark inside
-    check_pen = QPen(QColor(color), 1.5)
+    # Box outline
+    x, y, w, h = badge_rect.x(), badge_rect.y(), badge_rect.width(), badge_rect.height()
+    pad = 3
+    box = QRectF(x + pad, y + pad, w - pad * 2, h - pad * 2)
+    painter.drawRoundedRect(box, 3.0, 3.0)
+
+    # Checkmark
+    check_pen = QPen(QColor(color), 1.6)
     check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(check_pen)
 
     path = QPainterPath()
-    path.moveTo(cx - 3.8, cy + 0.3)
-    path.lineTo(cx - 1.0, cy + 3.1)
-    path.lineTo(cx + 4.2, cy - 2.7)
+    path.moveTo(box.left() + 3.0, box.top() + box.height() * 0.52)
+    path.lineTo(box.left() + box.width() * 0.40, box.bottom() - 3.2)
+    path.lineTo(box.right() - 3.0, box.top() + 3.5)
     painter.drawPath(path)
 
 
@@ -550,39 +212,10 @@ def create_checkbox_icon(
     color: str = "#0a84ff",
     box_color: str = "#8e8e93",
     size: int = 16,
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp square checkbox icon with checkmark."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    margin = 1.0
-    box_size = float(size) - (margin * 2.0)
-    box_rect = QRectF(margin, margin, box_size, box_size)
-
-    box_pen = QPen(QColor(box_color), 1.4)
-    painter.setPen(box_pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(box_rect, 3.5, 3.5)
-
-    cx = float(size) / 2.0
-    cy = float(size) / 2.0
-    check_pen = QPen(QColor(color), 1.5)
-    check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(check_pen)
-
-    path = QPainterPath()
-    path.moveTo(cx - 3.8, cy + 0.3)
-    path.lineTo(cx - 1.0, cy + 3.1)
-    path.lineTo(cx + 4.2, cy - 2.7)
-    painter.drawPath(path)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a crisp vector checkbox icon."""
+    return render_lucide_icon("check-square", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_link_icon(
@@ -590,112 +223,26 @@ def create_link_icon(
     size: int = 14,
     stroke_width: float = 1.35,
 ) -> QIcon:
-    """Generate a crisp, modern vector chain link icon at 45 degrees."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Scale canonical 24x24 Lucide-style chain link to target size
-    scale = size / 24.0
-    painter.translate(size / 2.0, size / 2.0)
-    painter.rotate(-45)
-    painter.scale(scale, scale)
-    painter.translate(-12.0, -12.0)
-
-    # Adjust stroke inversely so rendered line width stays crisp and true to pixel size
-    pen = QPen(QColor(color), stroke_width / scale)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Left loop
-    p_left = QPainterPath()
-    p_left.moveTo(9.5, 17.0)
-    p_left.lineTo(7.0, 17.0)
-    p_left.arcTo(QRectF(2.0, 7.0, 10.0, 10.0), 270, -180)
-    p_left.lineTo(9.5, 7.0)
-    painter.drawPath(p_left)
-
-    # Right loop
-    p_right = QPainterPath()
-    p_right.moveTo(14.5, 7.0)
-    p_right.lineTo(17.0, 7.0)
-    p_right.arcTo(QRectF(12.0, 7.0, 10.0, 10.0), 90, -180)
-    p_right.lineTo(14.5, 17.0)
-    painter.drawPath(p_right)
-
-    # Center connecting bar
-    painter.drawLine(QPointF(8.0, 12.0), QPointF(16.0, 12.0))
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a crisp vector chain link icon."""
+    return render_lucide_icon("link", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_bullet_list_icon(
-    color: str = "#d0d0d4",
-    size: int = 14,
-    stroke_width: float = 1.3,
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp vector bulleted list icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Bullets (dots)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    r = 1.1
-    for y in (3.5, 7.0, 10.5):
-        painter.drawEllipse(QPointF(2.5, y), r, r)
-
-    # Lines
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    for y in (3.5, 7.0, 10.5):
-        painter.drawLine(QPointF(5.5, y), QPointF(12.0, y))
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean bulleted-list vector icon."""
+    return render_lucide_icon("list", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_number_list_icon(
-    color: str = "#d0d0d4",
-    size: int = 14,
-    stroke_width: float = 1.3,
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp vector numbered list icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    num_font = QFont("Cantarell", 3)
-    num_font.setBold(True)
-    painter.setFont(num_font)
-    painter.setPen(QColor(color))
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-
-    rows = [("1", 3.5), ("2", 7.0), ("3", 10.5)]
-    for num, y in rows:
-        painter.drawText(QRectF(0.5, y - 2.2, 3.5, 4.0), Qt.AlignmentFlag.AlignCenter, num)
-        painter.setPen(pen)
-        painter.drawLine(QPointF(5.5, y), QPointF(12.0, y))
-        painter.setPen(QColor(color))
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean numbered-list vector icon."""
+    return render_lucide_icon("list-ordered", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_export_icon(
@@ -703,137 +250,41 @@ def create_export_icon(
     size: int = 16,
     stroke_width: float = 1.5,
 ) -> QIcon:
-    """Generate a clean vector export/share icon (arrow emerging from tray)."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-
-    # Tray
-    path = QPainterPath()
-    path.moveTo(3.0, 7.5)
-    path.lineTo(3.0, 13.0)
-    path.lineTo(13.0, 13.0)
-    path.lineTo(13.0, 7.5)
-    painter.drawPath(path)
-
-    # Arrow pointing up out of tray
-    arrow = QPainterPath()
-    arrow.moveTo(8.0, 10.0)
-    arrow.lineTo(8.0, 2.5)
-    arrow.moveTo(5.0, 5.5)
-    arrow.lineTo(8.0, 2.5)
-    arrow.lineTo(11.0, 5.5)
-    painter.drawPath(arrow)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean vector export/share icon."""
+    return render_lucide_icon("share", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_open_file_icon(
     color: str = "#8e8e93",
     size: int = 16,
-    stroke_width: float = 1.35,
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp vector open-file / open-folder icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-
-    # Back flap of folder with tab
-    back_folder = QPainterPath()
-    back_folder.moveTo(2.5, 4.0)
-    back_folder.lineTo(5.5, 4.0)
-    back_folder.lineTo(7.0, 5.5)
-    back_folder.lineTo(13.5, 5.5)
-    back_folder.lineTo(13.5, 12.5)
-    back_folder.lineTo(2.5, 12.5)
-    back_folder.closeSubpath()
-    painter.drawPath(back_folder)
-
-    # Front open flap (perspective trapezoid)
-    front_flap = QPainterPath()
-    front_flap.moveTo(1.5, 12.5)
-    front_flap.lineTo(3.5, 7.5)
-    front_flap.lineTo(14.5, 7.5)
-    front_flap.lineTo(12.5, 12.5)
-    front_flap.closeSubpath()
-
-    fill_col = QColor(color)
-    fill_col.setAlpha(35)
-    painter.setBrush(QBrush(fill_col))
-    painter.drawPath(front_flap)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a vector icon for opening a note file."""
+    return render_lucide_icon("folder-input", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_backup_icon(
     color: str = "#8e8e93",
     size: int = 16,
     has_dot: bool = False,
-    dot_color: str = "#0a84ff",
+    dot_color: str = "#ff9f0a",
+    stroke_width: float = 1.6,
 ) -> QIcon:
-    """Generate a crisp vector cloud backup icon with optional pending changes badge."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    s = size / 24.0
-    painter.scale(s, s)
-
-    pen = QPen(QColor(color), 1.85)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Cloud outline on 24x24 canvas
-    cloud = QPainterPath()
-    cloud.moveTo(6.5, 18.0)
-    cloud.lineTo(4.5, 18.0)
-    cloud.arcTo(QRectF(1.0, 12.0, 6.0, 6.0), 270, -140)
-    cloud.arcTo(QRectF(3.5, 7.0, 8.0, 8.0), 190, -120)
-    cloud.arcTo(QRectF(9.5, 5.0, 9.0, 9.0), 160, -150)
-    cloud.arcTo(QRectF(17.0, 11.0, 6.0, 6.0), 90, -140)
-    cloud.lineTo(17.5, 18.0)
-    cloud.lineTo(6.5, 18.0)
-    painter.drawPath(cloud)
-
-    # Arrow inside pointing up
-    arrow = QPainterPath()
-    arrow.moveTo(12.0, 16.5)
-    arrow.lineTo(12.0, 10.5)
-    arrow.moveTo(9.5, 13.0)
-    arrow.lineTo(12.0, 10.5)
-    arrow.lineTo(14.5, 13.0)
-    painter.drawPath(arrow)
-
-    if has_dot:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(dot_color)))
-        painter.drawEllipse(QRectF(18.0, 3.0, 5.0, 5.0))
-
+    """Generate a clean vector backup / cloud upload icon with optional notification dot."""
+    if not has_dot:
+        return render_lucide_icon("cloud", color=color, size=size, stroke_width=stroke_width)
+    pm = render_lucide_pixmap("cloud", color=color, size=size, stroke_width=stroke_width).copy()
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(dot_color))
+    # Dot in top right corner (note pm devicePixelRatio is 2.0)
+    d = 4.0 * pm.devicePixelRatio()
+    x = pm.width() - d - 1.0
+    y = 1.0
+    painter.drawEllipse(QRectF(x, y, d, d))
     painter.end()
-    return QIcon(pixmap)
+    return QIcon(pm)
 
 
 def create_github_icon(color: str = "#ffffff", size: int = 16) -> QIcon:
@@ -855,96 +306,18 @@ def create_github_icon(color: str = "#ffffff", size: int = 16) -> QIcon:
 
 
 def create_sync_icon(color: str = "#ffffff", size: int = 16, stroke_width: float = 1.45) -> QIcon:
-    """Generate a clean dual-arrow rotating sync icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    s = size / 24.0
-    painter.scale(s, s)
-
-    pen = QPen(QColor(color), stroke_width / s)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Top-right arc & arrow
-    p_top = QPainterPath()
-    p_top.arcTo(QRectF(3.0, 3.0, 18.0, 18.0), 45, 140)
-    painter.drawPath(p_top)
-
-    arr_top = QPainterPath()
-    arr_top.moveTo(17.5, 4.0)
-    arr_top.lineTo(21.0, 7.5)
-    arr_top.lineTo(16.5, 9.0)
-    painter.drawPath(arr_top)
-
-    # Bottom-left arc & arrow
-    p_bot = QPainterPath()
-    p_bot.arcTo(QRectF(3.0, 3.0, 18.0, 18.0), 225, 140)
-    painter.drawPath(p_bot)
-
-    arr_bot = QPainterPath()
-    arr_bot.moveTo(6.5, 20.0)
-    arr_bot.lineTo(3.0, 16.5)
-    arr_bot.lineTo(7.5, 15.0)
-    painter.drawPath(arr_bot)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean rotating sync icon."""
+    return render_lucide_icon("refresh-cw", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_history_icon(color: str = "#8e8e93", size: int = 14, stroke_width: float = 1.35) -> QIcon:
-    """Generate a clean vector clock history / timeline icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Outer circle
-    center = size / 2.0
-    radius = center - 2.0
-    painter.drawEllipse(QPointF(center, center), radius, radius)
-
-    # Clock hands (12:00 and 3:00)
-    painter.drawLine(QPointF(center, center), QPointF(center, center - radius * 0.6))
-    painter.drawLine(QPointF(center, center), QPointF(center + radius * 0.5, center))
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean vector history / clock-rewind icon."""
+    return render_lucide_icon("history", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_diff_icon(color: str = "#8e8e93", size: int = 14, stroke_width: float = 1.35) -> QIcon:
-    """Generate a clean vector comparison / diff icon."""
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    # Left and right vertical columns
-    painter.drawRoundedRect(QRectF(1.5, 1.5, 4.5, size - 3.0), 1.5, 1.5)
-    painter.drawRoundedRect(QRectF(size - 6.0, 1.5, 4.5, size - 3.0), 1.5, 1.5)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Generate a clean vector comparison / git-diff icon."""
+    return render_lucide_icon("git-compare", color=color, size=size, stroke_width=stroke_width)
 
 
 def create_eye_icon(
@@ -953,43 +326,64 @@ def create_eye_icon(
     size: int = 16,
     stroke_width: float = 1.4,
 ) -> QIcon:
-    """Generate a crisp vector eye or eye-off icon for password visibility toggling."""
-    pixmap = QPixmap(size * 2, size * 2)
+    """Generate a clean vector eye (or eye-off) visibility icon."""
+    name = "eye" if open_eye else "eye-off"
+    return render_lucide_icon(name, color=color, size=size, stroke_width=stroke_width)
+
+
+def create_edit_icon(
+    color: str = "#0a84ff",
+    size: int = 16,
+    stroke_width: float = 1.4,
+) -> QIcon:
+    """Generate a crisp vector pencil / edit icon."""
+    return render_lucide_icon("pencil", color=color, size=size, stroke_width=stroke_width)
+
+
+def create_alert_icon(
+    color: str = "#0a84ff",
+    size: int = 16,
+    stroke_width: float = 1.6,
+) -> QIcon:
+    """Generate a crisp vector alert / exclamation warning icon."""
+    return render_lucide_icon("alert-circle", color=color, size=size, stroke_width=stroke_width)
+
+
+def create_info_icon(
+    color: str = "#0a84ff",
+    size: int = 16,
+    stroke_width: float = 1.6,
+) -> QIcon:
+    """Generate a crisp vector information icon."""
+    return render_lucide_icon("info", color=color, size=size, stroke_width=stroke_width)
+
+
+def create_badge_pixmap(
+    icon: QIcon,
+    bg_color: str = "#1a2638",
+    border_color: str = "#233b5d",
+    badge_size: int = 36,
+    icon_size: int = 20,
+    corner_radius: float = 8.0,
+) -> QPixmap:
+    """Generate a crisp high-DPI rounded badge container pixmap embedding an icon."""
+    pixmap = QPixmap(badge_size * 2, badge_size * 2)
     pixmap.setDevicePixelRatio(2.0)
     pixmap.fill(Qt.GlobalColor.transparent)
 
     painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-    pen = QPen(QColor(color), stroke_width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
+    rect = QRectF(0.5, 0.5, float(badge_size) - 1.0, float(badge_size) - 1.0)
+    painter.setPen(QPen(QColor(border_color), 1.0))
+    painter.setBrush(QBrush(QColor(bg_color)))
+    painter.drawRoundedRect(rect, corner_radius, corner_radius)
 
-    cx = float(size) / 2.0
-    cy = float(size) / 2.0
-
-    # Eye outline using two smooth cubic bezier arcs
-    left_x, right_x = 2.0, float(size) - 2.0
-    eye_path = QPainterPath()
-    eye_path.moveTo(left_x, cy)
-    eye_path.cubicTo(QPointF(cx - 3.2, cy - 4.2), QPointF(cx + 3.2, cy - 4.2), QPointF(right_x, cy))
-    eye_path.cubicTo(QPointF(cx + 3.2, cy + 4.2), QPointF(cx - 3.2, cy + 4.2), QPointF(left_x, cy))
-    painter.drawPath(eye_path)
-
-    # Center pupil circle
-    painter.drawEllipse(QPointF(cx, cy), 2.1, 2.1)
-
-    # Diagonal slash if closed/off
-    if not open_eye:
-        slash_pen = QPen(QColor(color), stroke_width + 0.1)
-        slash_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(slash_pen)
-        painter.drawLine(QPointF(2.5, 2.5), QPointF(float(size) - 2.5, float(size) - 2.5))
-
+    offset = int((badge_size - icon_size) / 2)
+    icon.paint(painter, offset, offset, icon_size, icon_size)
     painter.end()
-    return QIcon(pixmap)
+
+    return pixmap
 
 
 def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path]:
@@ -997,23 +391,34 @@ def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path
     assets_dir = (
         target_dir
         if target_dir is not None
-        else Path(__file__).resolve().parent.parent / "assets"
+        else Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "assets"
     )
     assets_dir.mkdir(parents=True, exist_ok=True)
     right_path = assets_dir / "chevron_right.png"
     down_path = assets_dir / "chevron_down.png"
 
-    if not right_path.exists():
-        r_icon = create_chevron_icon("right", color="#8e8e93", size=14, stroke_width=1.8)
-        r_icon.pixmap(QSize(28, 28)).save(str(right_path), "PNG")
-    if not down_path.exists():
-        d_icon = create_chevron_icon("down", color="#8e8e93", size=14, stroke_width=1.8)
-        d_icon.pixmap(QSize(28, 28)).save(str(down_path), "PNG")
+    r_icon = create_chevron_icon("right", color="#8e8e93", size=14, stroke_width=1.8)
+    r_icon.pixmap(QSize(28, 28)).save(str(right_path), "PNG")
+
+    d_icon = create_chevron_icon("down", color="#8e8e93", size=14, stroke_width=1.8)
+    d_icon.pixmap(QSize(28, 28)).save(str(down_path), "PNG")
 
     return right_path, down_path
 
 
 STANDARD_ICON_SIZES: List[int] = [16, 24, 32, 48, 64, 128, 256, 512]
+PRESET_COLORS: List[Tuple[str, str]] = [
+    ("Blue", "#0a84ff"),
+    ("Purple", "#bf5af2"),
+    ("Pink", "#ff375f"),
+    ("Red", "#ff453a"),
+    ("Orange", "#ff9f0a"),
+    ("Yellow", "#ffd60a"),
+    ("Green", "#30d158"),
+    ("Teal", "#64d2ff"),
+    ("Indigo", "#5e5ce6"),
+    ("Gray", "#8e8e93"),
+]
 
 
 def mask_squircle(image: "QImage", radius_ratio: float = 0.2237) -> "QImage":
@@ -1044,12 +449,7 @@ def generate_standard_app_icons(
     assets_root: Optional[Path] = None,
     apply_squircle: bool = True,
 ) -> List[Path]:
-    """Generate all standard Linux XDG hicolor icon sizes from the master app icon.
-
-    Applies a smooth continuous squircle mask with transparent outer corners,
-    creates the XDG hicolor tree (assets/icons/hicolor/<size>x<size>/apps/markup-notes.png),
-    and top-level convenience icons (assets/icons/markup-notes-<size>x<size>.png).
-    """
+    """Generate all standard Linux XDG hicolor icon sizes from the master app icon."""
     from PyQt6.QtGui import QImage
 
     project_root = Path(__file__).resolve().parent.parent
@@ -1068,9 +468,7 @@ def generate_standard_app_icons(
     if orig_image.isNull():
         return []
 
-    # Apply squircle mask to ensure smooth rounded corners with transparent background
     master_image = mask_squircle(orig_image) if apply_squircle else orig_image
-    # Save masked version to assets/markup-note.png
     dest_master = project_root / "assets" / "markup-note.png"
     master_image.save(str(dest_master), "PNG")
 
@@ -1084,15 +482,12 @@ def generate_standard_app_icons(
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # 1. Standard XDG hicolor structure:
-        # assets/icons/hicolor/<size>x<size>/apps/markup-notes.png
         hicolor_dir = base_assets / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         hicolor_dir.mkdir(parents=True, exist_ok=True)
         hicolor_file = hicolor_dir / "markup-notes.png"
         scaled.save(str(hicolor_file), "PNG")
         generated_paths.append(hicolor_file)
 
-        # 2. Top-level size icon for quick referencing
         flat_dir = base_assets / "icons"
         flat_dir.mkdir(parents=True, exist_ok=True)
         flat_file = flat_dir / f"markup-notes-{size}x{size}.png"
@@ -1100,4 +495,3 @@ def generate_standard_app_icons(
         generated_paths.append(flat_file)
 
     return generated_paths
-

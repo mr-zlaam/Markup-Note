@@ -17,7 +17,7 @@ if "QT_QPA_PLATFORMTHEME" not in os.environ:
     os.environ["QT_QPA_PLATFORMTHEME"] = "xdgdesktopportal"
 
 try:
-    from PyQt6.QtCore import QTimer
+    from PyQt6.QtCore import QTimer, Qt
     from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication
 
@@ -37,6 +37,7 @@ except Exception as import_err:
 
 def main() -> None:
     """Launch the Markup Notes application with clean Ctrl+C terminal signal handling."""
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
     app = QApplication(sys.argv)
     desktop_id = os.environ.get("FLATPAK_ID", "io.github.mr_zlaam.MarkupNotes")
     app.setDesktopFileName(desktop_id)

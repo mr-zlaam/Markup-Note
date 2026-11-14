@@ -229,6 +229,8 @@ class SlashCommandPalette(QFrame):
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.setItemDelegate(SlashItemDelegate(self.list_widget))
+        self.list_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.list_widget.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.list_widget)
 

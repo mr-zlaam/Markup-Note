@@ -24,12 +24,16 @@ from PyQt6.QtWidgets import (
 )
 
 from core.note import Note
+from ui.context_menu import ModernContextMenu
 from ui.dialogs import ModernColorDialog
 from utils.icons import (
     PRESET_COLORS,
     create_check_icon,
+    create_checkbox_icon,
     create_close_icon,
     create_color_circle_icon,
+    create_done_icon,
+    create_edit_icon,
     create_markdown_icon,
     create_notes_toggle_icon,
     create_plus_icon,
@@ -316,6 +320,8 @@ class NoteListPanel(QWidget):
         self.list_widget = QListWidget(parent=self)
         self.list_widget.setObjectName("NoteCardsList")
         self.list_widget.setItemDelegate(NoteCardDelegate(self))
+        self.list_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.list_widget.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.list_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         QScroller.grabGesture(self.list_widget.viewport(), QScroller.ScrollerGestureType.TouchGesture)
@@ -395,27 +401,40 @@ class NoteListPanel(QWidget):
         super().keyPressEvent(event)
 
     def _on_context_menu(self, pos: QPoint) -> None:
-        """Display sleek context menu for note card."""
+        """Display sleek context menu for note card or empty space."""
         item = self.list_widget.itemAt(pos)
+
         if item is None:
+            if not self._is_selection_mode:
+                menu = ModernContextMenu(self)
+                new_note_act = menu.addAction(create_plus_icon("#8e8e93", size=14), "New Note")
+                select_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select Notes...")
+
+                action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
+                if action == new_note_act:
+                    self.new_note_requested.emit()
+                elif action == select_act:
+                    self.enter_selection_mode()
             return
 
         note: Optional[Note] = item.data(Qt.ItemDataRole.UserRole)
         if note is None:
             return
 
-        menu = QMenu(self)
+        menu = ModernContextMenu(self)
 
         if not self._is_selection_mode:
-            rename_act = menu.addAction("Rename Note...")
-            select_act = menu.addAction("Select...")
+            rename_act = menu.addAction(create_edit_icon("#8e8e93", size=14), "Rename Note...")
+            select_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select...")
 
             # Color options submenu
             color_menu = menu.addMenu("Color")
+            color_menu.menuAction().setIcon(create_color_circle_icon("#bf5af2", size=14))
             self._populate_color_menu(color_menu, note)
 
             menu.addSeparator()
-            delete_act = menu.addAction("Delete Note")
+            delete_act = menu.addAction(create_trash_icon("#ff453a", size=14), "Delete Note")
+            delete_act.setProperty("is_destructive", True)
 
             action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
             if action == rename_act:
@@ -425,11 +444,15 @@ class NoteListPanel(QWidget):
             elif action == delete_act:
                 self.delete_note_requested.emit(note)
         else:
-            select_all_act = menu.addAction("Select All")
-            deselect_all_act = menu.addAction("Clear Selection")
+            select_all_act = menu.addAction(create_checkbox_icon("#8e8e93", size=14), "Select All")
+            deselect_all_act = menu.addAction(create_uncheck_icon("#8e8e93", size=14), "Clear Selection")
             menu.addSeparator()
-            delete_batch_act = menu.addAction(f"Delete Selected ({len(self._selected_paths)})")
-            done_act = menu.addAction("Done")
+            delete_batch_act = menu.addAction(
+                create_trash_icon("#ff453a", size=14),
+                f"Delete Selected ({len(self._selected_paths)})",
+            )
+            delete_batch_act.setProperty("is_destructive", True)
+            done_act = menu.addAction(create_done_icon("#8e8e93", size=14), "Done")
 
             action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
             if action == select_all_act:

@@ -1,5 +1,6 @@
 """UI Package for Note Taker."""
 
+from ui.context_menu import ModernContextMenu
 from ui.dialogs import ModernConfirmDialog, ModernInputDialog
 from ui.editor import EditorPanel, MarkdownEditor
 from ui.highlighter import MarkdownHighlighter
@@ -15,6 +16,7 @@ __all__ = [
     "MarkdownEditor",
     "MarkdownHighlighter",
     "ModernConfirmDialog",
+    "ModernContextMenu",
     "ModernInputDialog",
     "NoteListPanel",
     "FolderSidebar",

@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from utils.icons import create_badge_pixmap, create_diff_icon
+
 
 class ModernDiffDialog(QDialog):
     """Sleek dark-themed diff viewer for comparing edited notes with their last backup."""
@@ -109,6 +111,23 @@ class ModernDiffDialog(QDialog):
 
         # Header
         hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        diff_icon = create_diff_icon("#0a84ff", size=18)
+        badge_lbl.setPixmap(
+            create_badge_pixmap(
+                diff_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=18,
+            )
+        )
+        hdr_layout.addWidget(badge_lbl)
+
         title_vbox = QVBoxLayout()
         title_vbox.setSpacing(2)
 
@@ -120,8 +139,7 @@ class ModernDiffDialog(QDialog):
         sub_lbl.setObjectName("SubtitleLabel")
         title_vbox.addWidget(sub_lbl)
 
-        hdr_layout.addLayout(title_vbox)
-        hdr_layout.addStretch()
+        hdr_layout.addLayout(title_vbox, stretch=1)
         layout.addLayout(hdr_layout)
 
         # Diff View TextEdit

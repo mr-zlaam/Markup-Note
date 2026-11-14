@@ -500,6 +500,8 @@ class BackupPanel(QWidget):
         self.changes_list.setObjectName("ChangesList")
         self.changes_list.setItemDelegate(ChangeItemDelegate(self))
         self.changes_list.setFixedHeight(110)
+        self.changes_list.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.changes_list.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         layout.addWidget(self.changes_list)
 
         # Separator line 2

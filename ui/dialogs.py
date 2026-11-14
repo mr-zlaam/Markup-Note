@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QColor, QIcon
+from PyQt6.QtGui import QColor, QIcon, QKeyEvent
 from PyQt6.QtWidgets import (
     QColorDialog,
     QDialog,
@@ -17,6 +17,18 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+)
+
+from utils.icons import (
+    create_alert_icon,
+    create_badge_pixmap,
+    create_edit_icon,
+    create_export_icon,
+    create_folder_icon,
+    create_info_icon,
+    create_link_icon,
+    create_markdown_icon,
+    create_trash_icon,
 )
 
 
@@ -30,6 +42,7 @@ class ModernInputDialog(QDialog):
         prompt: str = "Enter folder name:",
         default_text: str = "",
         confirm_text: str = "Create",
+        icon_type: Optional[Union[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -97,19 +110,65 @@ class ModernInputDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 24, 26, 22)
+        layout.setContentsMargins(24, 22, 24, 20)
         layout.setSpacing(14)
 
-        # Title
+        # Determine icon for modal header badge
+        resolved_icon: QIcon
+        if isinstance(icon_type, QIcon):
+            resolved_icon = icon_type
+        else:
+            inferred = icon_type or ""
+            if not inferred:
+                combined_text = f"{title} {prompt}".lower()
+                if "rename" in combined_text:
+                    inferred = "rename"
+                elif "folder" in combined_text:
+                    inferred = "folder"
+                elif "note" in combined_text:
+                    inferred = "note"
+                else:
+                    inferred = "folder"
+
+            if inferred == "rename":
+                resolved_icon = create_edit_icon("#0a84ff", size=20)
+            elif inferred == "note":
+                resolved_icon = create_markdown_icon("#0a84ff", size=20)
+            else:
+                resolved_icon = create_folder_icon("#0a84ff", size=20)
+
+        # Header with icon badge and title
+        hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        badge_lbl.setPixmap(
+            create_badge_pixmap(
+                resolved_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=20,
+            )
+        )
+        hdr_layout.addWidget(badge_lbl)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
+
         title_lbl = QLabel(title, parent=self)
         title_lbl.setObjectName("TitleLabel")
-        layout.addWidget(title_lbl)
+        title_vbox.addWidget(title_lbl)
 
-        # Prompt
         if prompt:
             prompt_lbl = QLabel(prompt, parent=self)
             prompt_lbl.setObjectName("PromptLabel")
-            layout.addWidget(prompt_lbl)
+            title_vbox.addWidget(prompt_lbl)
+
+        hdr_layout.addLayout(title_vbox, stretch=1)
+        layout.addLayout(hdr_layout)
 
         # Input field
         self.input_field = QLineEdit(parent=self)
@@ -145,6 +204,7 @@ class ModernInputDialog(QDialog):
         prompt: str = "",
         default: str = "",
         confirm_text: str = "Create",
+        icon_type: Optional[Union[str, QIcon]] = None,
     ) -> Tuple[str, bool]:
         """Show modern input dialog and return (text, accepted)."""
         dlg = cls(
@@ -153,8 +213,11 @@ class ModernInputDialog(QDialog):
             prompt=prompt,
             default_text=default,
             confirm_text=confirm_text,
+            icon_type=icon_type,
         )
         dlg.input_field.setFocus()
+        if default:
+            dlg.input_field.selectAll()
         accepted = dlg.exec() == QDialog.DialogCode.Accepted
         return dlg.input_field.text().strip(), accepted
 
@@ -236,12 +299,39 @@ class ModernLinkDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
-        # Title
+        # Header with link icon badge
+        hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        link_icon = create_link_icon("#0a84ff", size=20)
+        badge_lbl.setPixmap(
+            create_badge_pixmap(
+                link_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=20,
+            )
+        )
+        hdr_layout.addWidget(badge_lbl)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
         title_lbl = QLabel("Insert Link", parent=self)
         title_lbl.setObjectName("TitleLabel")
-        layout.addWidget(title_lbl)
+        title_vbox.addWidget(title_lbl)
+
+        sub_lbl = QLabel("Add a web URL or external reference", parent=self)
+        sub_lbl.setStyleSheet("font-size: 12px; color: #9c9ca4;")
+        title_vbox.addWidget(sub_lbl)
+
+        hdr_layout.addLayout(title_vbox, stretch=1)
+        layout.addLayout(hdr_layout)
 
         # Field 1: Text
         text_lbl = QLabel("Text", parent=self)
@@ -384,19 +474,50 @@ class ModernConfirmDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 24, 26, 22)
-        layout.setSpacing(14)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(16)
 
-        # Title
+        # Header with icon badge and message
+        hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        if is_destructive:
+            confirm_icon = create_trash_icon("#ff453a", size=20)
+            pm = create_badge_pixmap(
+                confirm_icon,
+                bg_color="#321b1e",
+                border_color="#522428",
+                badge_size=36,
+                icon_size=20,
+            )
+        else:
+            confirm_icon = create_alert_icon("#0a84ff", size=20)
+            pm = create_badge_pixmap(
+                confirm_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=20,
+            )
+        badge_lbl.setPixmap(pm)
+        hdr_layout.addWidget(badge_lbl)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(4)
         title_lbl = QLabel(title, parent=self)
         title_lbl.setObjectName("TitleLabel")
-        layout.addWidget(title_lbl)
+        title_vbox.addWidget(title_lbl)
 
-        # Message
         msg_lbl = QLabel(message, parent=self)
         msg_lbl.setObjectName("MessageLabel")
         msg_lbl.setWordWrap(True)
-        layout.addWidget(msg_lbl)
+        title_vbox.addWidget(msg_lbl)
+
+        hdr_layout.addLayout(title_vbox, stretch=1)
+        layout.addLayout(hdr_layout)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -412,10 +533,22 @@ class ModernConfirmDialog(QDialog):
         self.confirm_btn = QPushButton(confirm_text, parent=self)
         self.confirm_btn.setObjectName("ConfirmBtn")
         self.confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.confirm_btn.setDefault(True)
+        self.confirm_btn.setAutoDefault(True)
         self.confirm_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.confirm_btn)
 
         layout.addLayout(btn_layout)
+
+        # Ensure confirm button has initial focus for instant Enter confirmation
+        self.confirm_btn.setFocus()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Handle keyboard shortcuts: Enter confirms, Esc cancels."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.accept()
+            return
+        super().keyPressEvent(event)
 
     @classmethod
     def ask(
@@ -641,37 +774,82 @@ class ModernMessageDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 24, 26, 22)
-        layout.setSpacing(14)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(16)
 
+        # Header with icon badge and message
+        hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        if is_error:
+            msg_icon = create_alert_icon("#ff453a", size=20)
+            pm = create_badge_pixmap(
+                msg_icon,
+                bg_color="#321b1e",
+                border_color="#522428",
+                badge_size=36,
+                icon_size=20,
+            )
+        else:
+            msg_icon = create_info_icon("#0a84ff", size=20)
+            pm = create_badge_pixmap(
+                msg_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=20,
+            )
+        badge_lbl.setPixmap(pm)
+        hdr_layout.addWidget(badge_lbl)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(4)
         title_lbl = QLabel(title, parent=self)
         title_lbl.setObjectName("TitleLabel")
-        layout.addWidget(title_lbl)
+        title_vbox.addWidget(title_lbl)
 
         msg_lbl = QLabel(message, parent=self)
         msg_lbl.setObjectName("MessageLabel")
         msg_lbl.setWordWrap(True)
-        layout.addWidget(msg_lbl)
+        title_vbox.addWidget(msg_lbl)
+
+        hdr_layout.addLayout(title_vbox, stretch=1)
+        layout.addLayout(hdr_layout)
 
         btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(0, 10, 0, 0)
+        btn_layout.setContentsMargins(0, 8, 0, 0)
         btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
+        self.cancel_btn: Optional[QPushButton] = None
         if cancel_text:
-            cancel_btn = QPushButton(cancel_text, parent=self)
-            cancel_btn.setObjectName("SecondaryBtn")
-            cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            cancel_btn.clicked.connect(self.reject)
-            btn_layout.addWidget(cancel_btn)
+            self.cancel_btn = QPushButton(cancel_text, parent=self)
+            self.cancel_btn.setObjectName("SecondaryBtn")
+            self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.cancel_btn.clicked.connect(self.reject)
+            btn_layout.addWidget(self.cancel_btn)
 
-        confirm_btn = QPushButton(confirm_text, parent=self)
-        confirm_btn.setObjectName("ErrorPrimaryBtn" if is_error and not cancel_text else "PrimaryBtn")
-        confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        confirm_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(confirm_btn)
+        self.confirm_btn = QPushButton(confirm_text, parent=self)
+        self.confirm_btn.setObjectName("ErrorPrimaryBtn" if is_error and not cancel_text else "PrimaryBtn")
+        self.confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.confirm_btn.setDefault(True)
+        self.confirm_btn.setAutoDefault(True)
+        self.confirm_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.confirm_btn)
 
         layout.addLayout(btn_layout)
+
+        self.confirm_btn.setFocus()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Handle keyboard shortcuts: Enter confirms, Esc cancels."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.accept()
+            return
+        super().keyPressEvent(event)
 
     @classmethod
     def show_error(cls, parent: Optional[QWidget], title: str, message: str) -> None:
@@ -834,13 +1012,40 @@ class ModernExportDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 24, 26, 22)
+        layout.setContentsMargins(24, 22, 24, 20)
         layout.setSpacing(14)
 
-        # 1. Title
+        # 1. Header with Export Icon Badge
+        hdr_layout = QHBoxLayout()
+        hdr_layout.setSpacing(12)
+        hdr_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        badge_lbl = QLabel(parent=self)
+        badge_lbl.setFixedSize(36, 36)
+        exp_icon = create_export_icon("#0a84ff", size=20)
+        badge_lbl.setPixmap(
+            create_badge_pixmap(
+                exp_icon,
+                bg_color="#1a2638",
+                border_color="#233b5d",
+                badge_size=36,
+                icon_size=20,
+            )
+        )
+        hdr_layout.addWidget(badge_lbl)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
         title_lbl = QLabel("Export Note", parent=self)
         title_lbl.setObjectName("DialogTitle")
-        layout.addWidget(title_lbl)
+        title_vbox.addWidget(title_lbl)
+
+        sub_lbl = QLabel("Export note formatted as PDF, HTML, or Markdown", parent=self)
+        sub_lbl.setStyleSheet("font-size: 12px; color: #9c9ca4;")
+        title_vbox.addWidget(sub_lbl)
+
+        hdr_layout.addLayout(title_vbox, stretch=1)
+        layout.addLayout(hdr_layout)
 
         # 2. Format Selector
         fmt_lbl = QLabel("Export Format", parent=self)

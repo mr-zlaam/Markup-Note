@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -198,6 +198,8 @@ class FolderSidebar(QWidget):
         self.tree_widget.itemCollapsed.connect(self._on_item_collapsed)
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self._on_context_menu)
+        self.tree_widget.installEventFilter(self)
+        self.tree_widget.viewport().installEventFilter(self)
 
         layout.addWidget(self.tree_widget, 1)
 
@@ -239,6 +241,27 @@ class FolderSidebar(QWidget):
             self._selected_folders = set(self._folders)
         self._update_folder_items()
         self._update_batch_bar()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle keyboard shortcuts such as Delete/Backspace on the folder tree."""
+        if (
+            watched in (self.tree_widget, self.tree_widget.viewport())
+            and event.type() == QEvent.Type.KeyPress
+        ):
+            key_event = event
+            if key_event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                if self._is_selection_mode:
+                    if self._selected_folders:
+                        self.delete_folders_batch_requested.emit(list(self._selected_folders))
+                        return True
+                else:
+                    current_item = self.tree_widget.currentItem()
+                    if current_item is not None:
+                        folder = current_item.data(0, Qt.ItemDataRole.UserRole)
+                        if folder is not None:
+                            self.delete_folder_requested.emit(folder)
+                            return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, event) -> None:
         """Handle Escape key to cancel selection mode."""

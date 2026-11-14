@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
 
-from PyQt6.QtCore import QModelIndex, QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QModelIndex, QObject, QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -330,6 +330,8 @@ class NoteListPanel(QWidget):
         self.list_widget.itemClicked.connect(self._on_item_clicked)
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._on_context_menu)
+        self.list_widget.installEventFilter(self)
+        self.list_widget.viewport().installEventFilter(self)
 
         layout.addWidget(self.list_widget, 1)
 
@@ -391,6 +393,27 @@ class NoteListPanel(QWidget):
             note = item.data(Qt.ItemDataRole.UserRole)
             if note is not None:
                 self.toggle_note_selection(str(note.path))
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle keyboard shortcuts such as Delete/Backspace on note list."""
+        if (
+            watched in (self.list_widget, self.list_widget.viewport())
+            and event.type() == QEvent.Type.KeyPress
+        ):
+            key_event = event
+            if key_event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                if self._is_selection_mode:
+                    if self._selected_paths:
+                        self._on_batch_delete_clicked()
+                        return True
+                else:
+                    current_item = self.list_widget.currentItem()
+                    if current_item is not None:
+                        note = current_item.data(Qt.ItemDataRole.UserRole)
+                        if note is not None:
+                            self.delete_note_requested.emit(note)
+                            return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, event) -> None:
         """Handle Escape key to cancel selection mode."""

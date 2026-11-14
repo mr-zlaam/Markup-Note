@@ -11,6 +11,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PyQt6.QtCore import QPoint, QSize, Qt
 from PyQt6.QtGui import QPainter, QPixmap
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
 
 from core.note import Note
@@ -149,6 +150,58 @@ class TestFolderIconsAndContextMenus(unittest.TestCase):
         note_list.set_notes([note])
         item = note_list.list_widget.item(0)
         self.assertIsNotNone(item)
+
+        note_list.deleteLater()
+
+    def test_delete_key_on_focused_folder(self) -> None:
+        """Verify pressing Delete on a focused folder item emits delete_folder_requested."""
+        sidebar = FolderSidebar(parent=None)
+        test_folder = self.root_path / "TargetFolder"
+        test_folder.mkdir()
+        sidebar.set_folders([test_folder])
+
+        emitted_folders = []
+        sidebar.delete_folder_requested.connect(lambda f: emitted_folders.append(f))
+
+        # Focus 'All Notes' (index 0) - should NOT emit delete
+        all_notes_item = sidebar.tree_widget.topLevelItem(0)
+        sidebar.tree_widget.setCurrentItem(all_notes_item)
+        QTest.keyClick(sidebar.tree_widget, Qt.Key.Key_Delete)
+        self.assertEqual(len(emitted_folders), 0)
+
+        # Focus custom folder (index 1) - should emit delete
+        folder_item = sidebar.tree_widget.topLevelItem(1)
+        sidebar.tree_widget.setCurrentItem(folder_item)
+        QTest.keyClick(sidebar.tree_widget, Qt.Key.Key_Delete)
+        self.assertEqual(len(emitted_folders), 1)
+        self.assertEqual(emitted_folders[0], test_folder)
+
+        # Test on viewport as well
+        QTest.keyClick(sidebar.tree_widget.viewport(), Qt.Key.Key_Delete)
+        self.assertEqual(len(emitted_folders), 2)
+
+        sidebar.deleteLater()
+
+    def test_delete_key_on_focused_note(self) -> None:
+        """Verify pressing Delete on a focused note card emits delete_note_requested."""
+        note_list = NoteListPanel(parent=None)
+        note = self.storage.create_note(initial_title="DeleteMe")
+        self.assertIsNotNone(note)
+        note_list.set_notes([note])
+
+        emitted_notes = []
+        note_list.delete_note_requested.connect(lambda n: emitted_notes.append(n))
+
+        item = note_list.list_widget.item(0)
+        note_list.list_widget.setCurrentItem(item)
+
+        QTest.keyClick(note_list.list_widget, Qt.Key.Key_Delete)
+        self.assertEqual(len(emitted_notes), 1)
+        self.assertEqual(emitted_notes[0].title, "DeleteMe")
+
+        # Test on viewport as well
+        QTest.keyClick(note_list.list_widget.viewport(), Qt.Key.Key_Delete)
+        self.assertEqual(len(emitted_notes), 2)
 
         note_list.deleteLater()
 

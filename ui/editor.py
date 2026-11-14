@@ -70,6 +70,7 @@ from utils.markdown import (
     get_auto_continue_prefix,
     get_checkbox_info,
     is_checkbox_line,
+    transform_line_block_prefix,
 )
 from utils.math_engine import (
     INLINE_MATH_RE,
@@ -664,11 +665,11 @@ class MarkdownEditor(QTextEdit):
         self.slash_palette.hide()
         cursor = self.textCursor()
         block = cursor.block()
+        b_text = block.text()
 
         # Determine the slash position
         slash_pos = self._slash_start_pos - 1 if self._slash_start_pos is not None else None
         if slash_pos is None or slash_pos < block.position() or slash_pos > cursor.position():
-            b_text = block.text()
             b_offset = cursor.positionInBlock()
             last_slash = b_text.rfind("/", 0, b_offset)
             if last_slash != -1:
@@ -677,19 +678,49 @@ class MarkdownEditor(QTextEdit):
                 slash_pos = cursor.position()
 
         cursor.beginEditBlock()
-        replace_cursor = QTextCursor(self.document())
-        replace_cursor.setPosition(slash_pos)
-        replace_cursor.setPosition(cursor.position(), QTextCursor.MoveMode.KeepAnchor)
 
         if cmd.id == "code":
+            replace_cursor = QTextCursor(self.document())
+            replace_cursor.setPosition(slash_pos)
+            replace_cursor.setPosition(cursor.position(), QTextCursor.MoveMode.KeepAnchor)
             replace_cursor.insertText("```\n\n```")
             target_pos = slash_pos + 4
             c = QTextCursor(self.document())
             c.setPosition(target_pos)
             self.setTextCursor(c)
-        else:
+        elif cmd.id == "divider":
+            replace_cursor = QTextCursor(self.document())
+            replace_cursor.setPosition(slash_pos)
+            replace_cursor.setPosition(cursor.position(), QTextCursor.MoveMode.KeepAnchor)
             replace_cursor.insertText(cmd.prefix)
             self.setTextCursor(replace_cursor)
+        else:
+            # Line-level formatting command (checkbox, bullet, number, h1, h2, h3, quote)
+            # Transform current line to the requested block format regardless of previous format
+            b_slash_offset = slash_pos - block.position()
+            b_end_offset = cursor.positionInBlock()
+            text_before = b_text[:b_slash_offset].rstrip()
+            text_after = b_text[b_end_offset:]
+            line_content = text_before + text_after
+
+            new_line = transform_line_block_prefix(line_content, cmd.prefix)
+
+            # Replace the entire block with the transformed line
+            line_cursor = QTextCursor(block)
+            line_cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            line_cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            line_cursor.insertText(new_line)
+
+            # Place cursor at the appropriate position in the transformed line
+            if text_after:
+                new_cursor_offset = max(0, min(len(new_line), len(new_line) - len(line_content) + b_slash_offset))
+                target_pos = block.position() + new_cursor_offset
+            else:
+                target_pos = block.position() + len(new_line)
+
+            end_cursor = QTextCursor(self.document())
+            end_cursor.setPosition(target_pos)
+            self.setTextCursor(end_cursor)
 
         cursor.endEditBlock()
         self._slash_start_pos = None

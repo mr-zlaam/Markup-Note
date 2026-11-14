@@ -51,4 +51,4 @@
 ### 7. Strict Emoji Prohibition
 * **No Emojis:** You are strictly forbidden from adding any emojis in any markdown file, documentation, code comments, PR descriptions, commit messages, or responses. Maintain clean, professional, plain text styling at all times.
 ### 8. Restricted for push on github
-* **NO PUSH:** You are strictly restricted to write to make commit and push it on github unless asked explictly
+* **NO PUSH:** You are strictly restricted to write to make commit and push it on github unless asked explictly but you must always suggest commit message afer the change

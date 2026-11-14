@@ -89,3 +89,36 @@ def get_auto_continue_prefix(line: str) -> Optional[str]:
         return f"{indent}{marker}{space}"
 
     return None
+
+
+BLOCK_PREFIX_PATTERN = re.compile(
+    r"^(\s*[-*+]?\s*\[[ xX]?\]\s*|\s*[-*+]\s+|\s*\d+[\.\)]\s+|\s*#{1,6}\s*|\s*>\s*)"
+)
+
+
+def transform_line_block_prefix(line_text: str, new_prefix: str) -> str:
+    """Transform an existing line's prefix (bullet, checkbox, number, heading, quote) to a new prefix.
+
+    Preserves leading indentation and core content while stripping any previous marker.
+    Preserves [x] checked state when transforming an already-checked checkbox to a checkbox.
+    """
+    indent = line_text[: len(line_text) - len(line_text.lstrip())]
+    line_no_indent = line_text[len(indent) :]
+
+    was_checked = bool(re.match(r"^[-*+]?\s*\[[xX]\]", line_no_indent.strip()))
+
+    m = BLOCK_PREFIX_PATTERN.match(line_no_indent)
+    if m:
+        core_text = line_no_indent[m.end() :]
+    else:
+        trimmed = line_no_indent.strip()
+        if trimmed in ("-", "*", "+", "- []", "- [ ]", "- [x]", "- [X]", ">", "#", "##", "###"):
+            core_text = ""
+        else:
+            core_text = line_no_indent
+
+    target_prefix = new_prefix
+    if was_checked and target_prefix.startswith("- [ ]"):
+        target_prefix = target_prefix.replace("[ ]", "[x]")
+
+    return f"{indent}{target_prefix}{core_text}"

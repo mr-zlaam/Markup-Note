@@ -233,6 +233,159 @@ class TestTouchpadAndCheckboxHover(unittest.TestCase):
         self.assertEqual(MarkdownHighlighter.HEADING_SIZES[5], 15)
         self.assertEqual(MarkdownHighlighter.HEADING_SIZES[6], 14)
 
+    def test_slash_checkbox_on_existing_checkbox_line_ignored(self) -> None:
+        """Verify selecting /checkbox on a line that is already a checkbox ignores duplicate insertion."""
+        from ui.slash_menu import COMMANDS
+        cmd = [c for c in COMMANDS if c.id == "checkbox"][0]
+
+        # Case 1: Empty checkbox line with /checkbox
+        self.editor.setPlainText("- [ ] /checkbox")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ]")
+
+        # Case 2: Checkbox line with text and /checkbox
+        self.editor.setPlainText("- [ ] Buy milk /checkbox")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ] Buy milk")
+
+        # Case 3: Checked checkbox line with /check
+        self.editor.setPlainText("- [x] Done item /check")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [x] Done item")
+
+    def test_slash_checkbox_on_plain_line_inserts_checkbox(self) -> None:
+        """Verify selecting /checkbox on a non-checkbox line inserts the markdown checkbox prefix."""
+        from ui.slash_menu import COMMANDS
+        cmd = [c for c in COMMANDS if c.id == "checkbox"][0]
+
+        self.editor.setPlainText("/checkbox")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ]")
+
+    def test_slash_command_transforms_line_between_list_types(self) -> None:
+        """Verify slash commands transform the current line to the selected block format."""
+        from ui.slash_menu import COMMANDS
+        cmd_bullet = [c for c in COMMANDS if c.id == "bullet"][0]
+        cmd_number = [c for c in COMMANDS if c.id == "number"][0]
+        cmd_checkbox = [c for c in COMMANDS if c.id == "checkbox"][0]
+        cmd_h1 = [c for c in COMMANDS if c.id == "h1"][0]
+        cmd_quote = [c for c in COMMANDS if c.id == "quote"][0]
+
+        # 1. Transform checkbox to bullet
+        self.editor.setPlainText("- [ ] Buy milk /bullet")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_bullet)
+        self.assertEqual(self.editor.toPlainText().strip(), "- Buy milk")
+
+        # 2. Transform bullet to number list
+        self.editor.setPlainText("- Buy milk /number")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_number)
+        self.assertEqual(self.editor.toPlainText().strip(), "1. Buy milk")
+
+        # 3. Transform number list to checkbox
+        self.editor.setPlainText("1. Buy milk /checkbox")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_checkbox)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ] Buy milk")
+
+        # 4. Transform heading level
+        self.editor.setPlainText("## Section Title /h1")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_h1)
+        self.assertEqual(self.editor.toPlainText().strip(), "# Section Title")
+
+        # 5. Transform bullet to quote
+        self.editor.setPlainText("- Quoted note /quote")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_quote)
+        self.assertEqual(self.editor.toPlainText().strip(), "> Quoted note")
+
+        # 6. Transform empty checkbox to bullet
+        self.editor.setPlainText("- [ ] /bullet")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_bullet)
+        self.assertEqual(self.editor.toPlainText().strip(), "-")
+
+        # 7. Transform empty bullet to checkbox
+        self.editor.setPlainText("- /checkbox")
+        c = self.editor.textCursor()
+        c.setPosition(len(self.editor.toPlainText()))
+        self.editor.setTextCursor(c)
+        self.editor._on_slash_command_selected(cmd_checkbox)
+        self.assertEqual(self.editor.toPlainText().strip(), "- [ ]")
+
+    def test_slash_command_with_slash_start_pos_populated(self) -> None:
+        """Verify slash command execution when _slash_start_pos is populated (regression test for b_text UnboundLocalError)."""
+        from ui.slash_menu import COMMANDS
+        cmd_bullet = [c for c in COMMANDS if c.id == "bullet"][0]
+
+        text = "- [ ] Features: Add icons for all small modals like rename, select delete /bul"
+        self.editor.setPlainText(text)
+        slash_idx = text.rfind("/")
+        # _slash_start_pos is the index immediately following '/'
+        self.editor._slash_start_pos = slash_idx + 1
+
+        c = self.editor.textCursor()
+        c.setPosition(len(text))
+        self.editor.setTextCursor(c)
+
+        # Must not raise UnboundLocalError: b_text
+        self.editor._on_slash_command_selected(cmd_bullet)
+        self.assertEqual(
+            self.editor.toPlainText().strip(),
+            "- Features: Add icons for all small modals like rename, select delete",
+        )
+        self.assertEqual(self.editor.textCursor().position(), len(self.editor.toPlainText()))
+
+    def test_slash_command_mid_line_with_slash_start_pos(self) -> None:
+        """Verify mid-line slash command transforms the line prefix and positions cursor correctly."""
+        from ui.slash_menu import COMMANDS
+        cmd_bullet = [c for c in COMMANDS if c.id == "bullet"][0]
+
+        prefix = "Features: "
+        query = "/bul"
+        suffix = " more items"
+        full_text = prefix + query + suffix
+        self.editor.setPlainText(full_text)
+
+        slash_idx = prefix.find("/") if "/" in prefix else len(prefix)
+        self.editor._slash_start_pos = slash_idx + 1
+
+        c = self.editor.textCursor()
+        c.setPosition(slash_idx + len(query))
+        self.editor.setTextCursor(c)
+
+        self.editor._on_slash_command_selected(cmd_bullet)
+        self.assertEqual(
+            self.editor.toPlainText().strip(),
+            "- Features: more items",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

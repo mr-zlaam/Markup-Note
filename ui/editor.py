@@ -53,6 +53,7 @@ from utils.touch import TouchScrollTracker, is_touch_event
 from utils.icons import (
     create_backup_icon,
     create_export_icon,
+    create_keyboard_icon,
     create_notes_toggle_icon,
     create_open_file_icon,
     create_sidebar_toggle_icon,
@@ -281,82 +282,15 @@ class MarkdownEditor(QTextEdit):
         self.format_toolbar.show_above_rect(global_rect)
 
     def _apply_text_format(self, format_type: str) -> None:
-        """Apply or toggle inline markdown formatting on selected text."""
+        """Apply or toggle inline/block markdown formatting on selection or cursor position."""
         cursor = self.textCursor()
-        if not cursor.hasSelection():
-            return
 
-        text = cursor.selectedText()
-        if not text:
-            return
+        # 1. Block-level list and checkbox formatting
+        if format_type in ("bullet", "number", "todo", "checkbox"):
+            has_orig_sel = cursor.hasSelection()
+            start = cursor.selectionStart() if has_orig_sel else cursor.position()
+            end = cursor.selectionEnd() if has_orig_sel else cursor.position()
 
-        start = cursor.selectionStart()
-        end = cursor.selectionEnd()
-
-        if format_type == "bold":
-            prefix, suffix = "**", "**"
-        elif format_type == "italic":
-            prefix, suffix = "*", "*"
-        elif format_type == "strike":
-            prefix, suffix = "~~", "~~"
-        elif format_type == "underline":
-            prefix, suffix = "<u>", "</u>"
-        elif format_type == "code":
-            prefix, suffix = "`", "`"
-        elif format_type == "link":
-            struct_match = re.match(
-                r"^(\s*(?:>+\s*)*(?:[-*+]\s*\[[ xX]?\]\s*|[-*+]\s+|\d+\.\s+|#{1,6}\s+))(.*)$",
-                text,
-            )
-            lead_prefix = struct_match.group(1) if struct_match else ""
-            core_text = struct_match.group(2) if struct_match else text
-
-            # Check if selection is already a markdown link [Text](URL)
-            existing_match = re.match(r"^\[(.*?)\]\((.*?)\)$", core_text.strip())
-            if existing_match:
-                init_text = existing_match.group(1)
-                init_url = existing_match.group(2)
-            else:
-                init_text = core_text
-                init_url = ""
-                cb = QApplication.clipboard().text().strip()
-                if cb.startswith(("http://", "https://", "mailto:")) and "\n" not in cb:
-                    init_url = cb
-
-            # Temporarily hide floating toolbar while modal dialog is open
-            if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
-                self.format_toolbar.hide()
-
-            link_text, link_url, accepted = ModernLinkDialog.get_link_data(
-                self, initial_text=init_text, initial_url=init_url
-            )
-            if not accepted:
-                return
-
-            if not link_text and not link_url:
-                return
-
-            if not link_text:
-                link_text = link_url
-
-            if link_url:
-                if not link_url.startswith(("http://", "https://", "mailto:", "file:", "#", "/", "./", "../")):
-                    link_url = "https://" + link_url
-                formatted = f"{lead_prefix}[{link_text}]({link_url})"
-            else:
-                formatted = f"{lead_prefix}{link_text}"
-
-            cursor.beginEditBlock()
-            cursor.insertText(formatted)
-            new_cursor = self.textCursor()
-            new_cursor.setPosition(start)
-            new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
-            self.setTextCursor(new_cursor)
-            cursor.endEditBlock()
-            self.viewport().update()
-            self._show_format_toolbar()
-            return
-        elif format_type in ("bullet", "number", "todo", "checkbox"):
             cursor.beginEditBlock()
             b_start = self.document().findBlock(start)
             b_end = self.document().findBlock(end)
@@ -411,18 +345,144 @@ class MarkdownEditor(QTextEdit):
                 c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
                 c.insertText(new_line)
 
-            # Re-select affected blocks
-            sel_cursor = QTextCursor(self.document())
-            sel_cursor.setPosition(b_start.position())
-            sel_cursor.setPosition(b_end.position() + len(b_end.text()), QTextCursor.MoveMode.KeepAnchor)
-            self.setTextCursor(sel_cursor)
+            if has_orig_sel:
+                sel_cursor = QTextCursor(self.document())
+                sel_cursor.setPosition(b_start.position())
+                sel_cursor.setPosition(b_end.position() + len(b_end.text()), QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(sel_cursor)
+            else:
+                new_c = QTextCursor(b_start)
+                new_c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                self.setTextCursor(new_c)
 
             cursor.endEditBlock()
             self.viewport().update()
-            self._show_format_toolbar()
+            if has_orig_sel:
+                self._show_format_toolbar()
+            elif hasattr(self, "format_toolbar"):
+                self.format_toolbar.hide()
             return
+
+        # 2. Link formatting
+        if format_type == "link":
+            if not cursor.hasSelection():
+                cursor.select(QTextCursor.SelectionType.WordUnderCursor)
+                if cursor.selectedText().strip():
+                    self.setTextCursor(cursor)
+
+            has_sel = self.textCursor().hasSelection()
+            text = self.textCursor().selectedText() if has_sel else ""
+            start = self.textCursor().selectionStart() if has_sel else self.textCursor().position()
+            end = self.textCursor().selectionEnd() if has_sel else self.textCursor().position()
+
+            struct_match = re.match(
+                r"^(\s*(?:>+\s*)*(?:[-*+]\s*\[[ xX]?\]\s*|[-*+]\s+|\d+\.\s+|#{1,6}\s+))(.*)$",
+                text,
+            )
+            lead_prefix = struct_match.group(1) if struct_match else ""
+            core_text = struct_match.group(2) if struct_match else text
+
+            existing_match = re.match(r"^\[(.*?)\]\((.*?)\)$", core_text.strip())
+            if existing_match:
+                init_text = existing_match.group(1)
+                init_url = existing_match.group(2)
+            else:
+                init_text = core_text
+                init_url = ""
+                cb = QApplication.clipboard().text().strip()
+                if cb.startswith(("http://", "https://", "mailto:")) and "\n" not in cb:
+                    init_url = cb
+
+            if hasattr(self, "format_toolbar") and self.format_toolbar.isVisible():
+                self.format_toolbar.hide()
+
+            link_text, link_url, accepted = ModernLinkDialog.get_link_data(
+                self, initial_text=init_text, initial_url=init_url
+            )
+            if not accepted:
+                return
+
+            if not link_text and not link_url:
+                return
+
+            if not link_text:
+                link_text = link_url
+
+            if link_url:
+                if not link_url.startswith(("http://", "https://", "mailto:", "file:", "#", "/", "./", "../")):
+                    link_url = "https://" + link_url
+                formatted = f"{lead_prefix}[{link_text}]({link_url})"
+            else:
+                formatted = f"{lead_prefix}{link_text}"
+
+            cur = self.textCursor()
+            cur.beginEditBlock()
+            cur.insertText(formatted)
+            new_cursor = self.textCursor()
+            new_cursor.setPosition(start)
+            new_cursor.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(new_cursor)
+            cur.endEditBlock()
+            self.viewport().update()
+            if self.textCursor().hasSelection():
+                self._show_format_toolbar()
+            return
+
+        # 3. Inline formatting (bold, italic, strike, underline, code)
+        if format_type == "bold":
+            prefix, suffix = "**", "**"
+        elif format_type == "italic":
+            prefix, suffix = "*", "*"
+        elif format_type == "strike":
+            prefix, suffix = "~~", "~~"
+        elif format_type == "underline":
+            prefix, suffix = "<u>", "</u>"
+        elif format_type == "code":
+            prefix, suffix = "`", "`"
         else:
             return
+
+        p_len = len(prefix)
+        s_len = len(suffix)
+
+        if not cursor.hasSelection():
+            # Check if cursor is already inside empty delimiter pair (e.g. **|**) -> delete it
+            pos = cursor.position()
+            doc_text = self.document().toPlainText()
+            if pos >= p_len and pos + s_len <= len(doc_text):
+                if doc_text[pos - p_len : pos] == prefix and doc_text[pos : pos + s_len] == suffix:
+                    cursor.beginEditBlock()
+                    del_c = QTextCursor(self.document())
+                    del_c.setPosition(pos - p_len)
+                    del_c.setPosition(pos + s_len, QTextCursor.MoveMode.KeepAnchor)
+                    del_c.removeSelectedText()
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
+
+            # Check if cursor is on a word: select word under cursor
+            cursor.select(QTextCursor.SelectionType.WordUnderCursor)
+            sel_word = cursor.selectedText().strip()
+            if sel_word and "\n" not in sel_word and "\r" not in sel_word:
+                self.setTextCursor(cursor)
+            else:
+                # Insert empty delimiter pair and position cursor inside
+                c = self.textCursor()
+                c.beginEditBlock()
+                c.insertText(prefix + suffix)
+                c.movePosition(QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.MoveAnchor, s_len)
+                self.setTextCursor(c)
+                c.endEditBlock()
+                self.viewport().update()
+                return
+
+        cursor = self.textCursor()
+        text = cursor.selectedText()
+        if not text:
+            return
+
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
 
         cursor.beginEditBlock()
 
@@ -433,9 +493,6 @@ class MarkdownEditor(QTextEdit):
         )
         lead_prefix = struct_match.group(1) if struct_match else ""
         core_text = struct_match.group(2) if struct_match else text
-
-        p_len = len(prefix)
-        s_len = len(suffix)
 
         # 1. Check if core_text itself is already wrapped in prefix/suffix
         if core_text.startswith(prefix) and core_text.endswith(suffix) and len(core_text) >= p_len + s_len:
@@ -453,7 +510,7 @@ class MarkdownEditor(QTextEdit):
             core_start = start + len(lead_prefix)
             core_end = end
             if core_start >= p_len and core_end + s_len <= len(doc_text):
-                if doc_text[core_start - p_len:core_start] == prefix and doc_text[core_end:core_end + s_len] == suffix:
+                if doc_text[core_start - p_len : core_start] == prefix and doc_text[core_end : core_end + s_len] == suffix:
                     has_surrounding = True
 
             if has_surrounding:
@@ -479,7 +536,162 @@ class MarkdownEditor(QTextEdit):
 
         cursor.endEditBlock()
         self.viewport().update()
-        self._show_format_toolbar()
+        if self.textCursor().hasSelection():
+            self._show_format_toolbar()
+
+    def _apply_block_heading(self, level: int) -> None:
+        """Apply or toggle markdown heading level (1 to 6) on current block or selection."""
+        level = max(1, min(6, level))
+        target_prefix = "#" * level + " "
+
+        cursor = self.textCursor()
+        has_sel = cursor.hasSelection()
+        start = cursor.selectionStart() if has_sel else cursor.position()
+        end = cursor.selectionEnd() if has_sel else cursor.position()
+
+        b_start = self.document().findBlock(start)
+        b_end = self.document().findBlock(end)
+        if b_end.position() == end and b_end.blockNumber() > b_start.blockNumber():
+            b_end = b_end.previous()
+
+        blocks = []
+        curr = b_start
+        while curr.isValid() and curr.blockNumber() <= b_end.blockNumber():
+            blocks.append(curr)
+            if curr == b_end:
+                break
+            curr = curr.next()
+
+        non_empty = [b for b in blocks if b.text().strip()]
+        all_match_target = bool(non_empty) and all(
+            re.match(r"^\s*" + re.escape(target_prefix), b.text()) for b in non_empty
+        )
+
+        cursor.beginEditBlock()
+        for b in reversed(blocks):
+            b_text = b.text()
+            if not b_text.strip():
+                continue
+            indent = b_text[: len(b_text) - len(b_text.lstrip())]
+            content = b_text[len(indent) :]
+            cleaned = re.sub(r"^(#{1,6}\s+|[-*+]\s*(\[[ xX]?\])?\s*|\d+\.\s*)", "", content)
+
+            if all_match_target:
+                new_line = indent + cleaned
+            else:
+                new_line = indent + target_prefix + cleaned
+
+            c = QTextCursor(b)
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            c.insertText(new_line)
+
+        if has_sel:
+            sel_cursor = QTextCursor(self.document())
+            sel_cursor.setPosition(b_start.position())
+            sel_cursor.setPosition(b_end.position() + len(b_end.text()), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(sel_cursor)
+        else:
+            new_c = QTextCursor(b_start)
+            new_c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            self.setTextCursor(new_c)
+
+        cursor.endEditBlock()
+        self.viewport().update()
+
+    def _apply_blockquote(self) -> None:
+        """Toggle blockquote (>) on current block or selection."""
+        cursor = self.textCursor()
+        has_sel = cursor.hasSelection()
+        start = cursor.selectionStart() if has_sel else cursor.position()
+        end = cursor.selectionEnd() if has_sel else cursor.position()
+
+        b_start = self.document().findBlock(start)
+        b_end = self.document().findBlock(end)
+        if b_end.position() == end and b_end.blockNumber() > b_start.blockNumber():
+            b_end = b_end.previous()
+
+        blocks = []
+        curr = b_start
+        while curr.isValid() and curr.blockNumber() <= b_end.blockNumber():
+            blocks.append(curr)
+            if curr == b_end:
+                break
+            curr = curr.next()
+
+        non_empty = [b for b in blocks if b.text().strip()]
+        all_quoted = bool(non_empty) and all(
+            re.match(r"^\s*>\s*", b.text()) for b in non_empty
+        )
+
+        cursor.beginEditBlock()
+        for b in reversed(blocks):
+            b_text = b.text()
+            if not b_text.strip():
+                continue
+            indent = b_text[: len(b_text) - len(b_text.lstrip())]
+            content = b_text[len(indent) :]
+
+            if all_quoted:
+                cleaned = re.sub(r"^>\s?", "", content)
+                new_line = indent + cleaned
+            else:
+                new_line = indent + "> " + content
+
+            c = QTextCursor(b)
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            c.insertText(new_line)
+
+        if has_sel:
+            sel_cursor = QTextCursor(self.document())
+            sel_cursor.setPosition(b_start.position())
+            sel_cursor.setPosition(b_end.position() + len(b_end.text()), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(sel_cursor)
+        else:
+            new_c = QTextCursor(b_start)
+            new_c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            self.setTextCursor(new_c)
+
+        cursor.endEditBlock()
+        self.viewport().update()
+
+    def _apply_code_block(self) -> None:
+        """Insert or wrap selection in a fenced code block."""
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        if cursor.hasSelection():
+            sel_text = cursor.selectedText().replace("\u2029", "\n")
+            if sel_text.startswith("```") and sel_text.rstrip().endswith("```"):
+                lines = sel_text.splitlines()
+                if len(lines) >= 2:
+                    unwrapped = "\n".join(lines[1:-1])
+                    cursor.insertText(unwrapped)
+                    cursor.endEditBlock()
+                    self.viewport().update()
+                    return
+            formatted = f"```\n{sel_text}\n```"
+            start = cursor.selectionStart()
+            cursor.insertText(formatted)
+            sel_c = self.textCursor()
+            sel_c.setPosition(start)
+            sel_c.setPosition(start + len(formatted), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(sel_c)
+        else:
+            block = cursor.block()
+            pos_in_b = cursor.positionInBlock()
+            prefix_nl = "\n" if pos_in_b > 0 and block.text()[:pos_in_b].strip() else ""
+            cursor.insertText(f"{prefix_nl}```\n\n```")
+            cursor.movePosition(QTextCursor.MoveOperation.PreviousBlock)
+            self.setTextCursor(cursor)
+        cursor.endEditBlock()
+        self.viewport().update()
+
+    def _show_shortcuts_dialog(self) -> None:
+        """Open the modern keyboard shortcuts reference cheatsheet modal."""
+        from ui.shortcuts_dialog import ModernShortcutsDialog
+        ModernShortcutsDialog.show_shortcuts(self.window())
+
 
     def find_matches(
         self, query: str, match_case: bool = False, whole_word: bool = False
@@ -1854,26 +2066,92 @@ class MarkdownEditor(QTextEdit):
         line_text = block.text()
         pos_in_block = cursor.positionInBlock()
 
-        # In-note Find (Ctrl+F), Replace (Ctrl+H), and formatting shortcuts
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            if event.key() == Qt.Key.Key_F:
-                self.find_requested.emit(False)
+        # F1 opens shortcuts reference cheatsheet
+        if event.key() == Qt.Key.Key_F1:
+            self._show_shortcuts_dialog()
+            event.accept()
+            return
+
+        mods = event.modifiers()
+        has_ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        has_shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        has_alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+
+        # Ctrl-based productivity and markdown formatting shortcuts
+        if has_ctrl and not has_alt:
+            # Ctrl+/ or Ctrl+? opens shortcuts modal
+            if event.key() in (Qt.Key.Key_Slash, Qt.Key.Key_Question) or event.text() in ("/", "?"):
+                self._show_shortcuts_dialog()
+                event.accept()
                 return
-            elif event.key() == Qt.Key.Key_H:
-                self.find_requested.emit(True)
-                return
-            elif event.key() == Qt.Key.Key_K:
-                self._apply_text_format("link")
-                return
-            elif event.key() == Qt.Key.Key_B:
-                self._apply_text_format("bold")
-                return
-            elif event.key() == Qt.Key.Key_I:
-                self._apply_text_format("italic")
-                return
-            elif event.key() == Qt.Key.Key_U:
-                self._apply_text_format("underline")
-                return
+
+            if not has_shift:
+                if event.key() == Qt.Key.Key_F:
+                    self.find_requested.emit(False)
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_H:
+                    self.find_requested.emit(True)
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_K:
+                    self._apply_text_format("link")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_B:
+                    self._apply_text_format("bold")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_I:
+                    self._apply_text_format("italic")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_U:
+                    self._apply_text_format("underline")
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_1, Qt.Key.Key_Exclam):
+                    self._apply_block_heading(1)
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_2, Qt.Key.Key_At):
+                    self._apply_block_heading(2)
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_3, Qt.Key.Key_NumberSign):
+                    self._apply_block_heading(3)
+                    event.accept()
+                    return
+            else:
+                # Ctrl + Shift + ...
+                if event.key() == Qt.Key.Key_X:
+                    self._apply_text_format("strike")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_C:
+                    self._apply_text_format("code")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_K:
+                    self._apply_code_block()
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_U, Qt.Key.Key_7, Qt.Key.Key_Ampersand):
+                    self._apply_text_format("bullet")
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_O, Qt.Key.Key_8, Qt.Key.Key_Asterisk):
+                    self._apply_text_format("number")
+                    event.accept()
+                    return
+                elif event.key() in (Qt.Key.Key_T, Qt.Key.Key_L):
+                    self._apply_text_format("todo")
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key.Key_Q:
+                    self._apply_blockquote()
+                    event.accept()
+                    return
 
         # Up arrow at the very top of document: jump up to NoteTitleEdit
         if event.key() == Qt.Key.Key_Up:
@@ -2322,6 +2600,16 @@ class EditorPanel(QWidget):
         self.export_btn.clicked.connect(self._show_export_menu)
         header.addWidget(self.export_btn)
 
+        # Keyboard Shortcuts Cheatsheet Button (Ctrl+/)
+        self.shortcuts_btn = QPushButton(parent=self)
+        self.shortcuts_btn.setObjectName("IconButton")
+        self.shortcuts_btn.setIcon(create_keyboard_icon("#8e8e93", size=15))
+        self.shortcuts_btn.setToolTip("Keyboard Shortcuts (Ctrl+/)")
+        self.shortcuts_btn.setFixedSize(26, 26)
+        self.shortcuts_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.shortcuts_btn.clicked.connect(self._show_shortcuts_dialog)
+        header.addWidget(self.shortcuts_btn)
+
         layout.addLayout(header)
 
         # Frameless note title input (Notion/Craft aesthetic)
@@ -2557,6 +2845,11 @@ class EditorPanel(QWidget):
     def export_current_note(self) -> None:
         """Trigger export menu from shortcut (Ctrl+E)."""
         self._show_export_menu()
+
+    def _show_shortcuts_dialog(self) -> None:
+        """Open the modern keyboard shortcuts reference cheatsheet modal."""
+        from ui.shortcuts_dialog import ModernShortcutsDialog
+        ModernShortcutsDialog.show_shortcuts(self.window())
 
     def load_note(self, note: Optional[Note]) -> None:
         """Load note markdown into the editor as pure plain text with live highlighting."""

@@ -358,6 +358,15 @@ def create_info_icon(
     return render_lucide_icon("info", color=color, size=size, stroke_width=stroke_width)
 
 
+def create_keyboard_icon(
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.6,
+) -> QIcon:
+    """Generate a crisp vector keyboard icon for shortcuts."""
+    return render_lucide_icon("keyboard", color=color, size=size, stroke_width=stroke_width)
+
+
 def create_badge_pixmap(
     icon: QIcon,
     bg_color: str = "#1a2638",

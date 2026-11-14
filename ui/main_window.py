@@ -199,6 +199,18 @@ class MainWindow(QMainWindow):
         quit_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
         quit_sc.activated.connect(self.close)
 
+        # Keyboard Shortcuts Cheatsheet (Ctrl+/ and F1)
+        shortcuts_help_sc = QShortcut(QKeySequence("Ctrl+/"), self)
+        shortcuts_help_sc.activated.connect(self._show_shortcuts_cheatsheet)
+
+        f1_sc = QShortcut(QKeySequence("F1"), self)
+        f1_sc.activated.connect(self._show_shortcuts_cheatsheet)
+
+    def _show_shortcuts_cheatsheet(self) -> None:
+        """Open the modern keyboard shortcuts reference cheatsheet dialog."""
+        from ui.shortcuts_dialog import ModernShortcutsDialog
+        ModernShortcutsDialog.show_shortcuts(self)
+
     def _on_ctrl_f(self) -> None:
         """Open in-note Find bar if a note is loaded, else focus sidebar search."""
         if self.editor._current_note is not None:

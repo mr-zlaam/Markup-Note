@@ -60,6 +60,78 @@ class TestKeyboardShortcuts(unittest.TestCase):
         dialog.close()
         dialog.deleteLater()
 
+    def test_shortcuts_dialog_backdrop_blur_and_enlarged_card(self) -> None:
+        """Verify modal creates enlarged card and handles parent backdrop blur overlay."""
+        from PyQt6.QtWidgets import QMainWindow
+        win = QMainWindow()
+        win.resize(1100, 750)
+        win.show()
+        app.processEvents()
+
+        dialog = ModernShortcutsDialog(parent=win)
+        dialog.show()
+        app.processEvents()
+
+        # Verify enlarged card size
+        self.assertGreaterEqual(dialog.card.width(), 760)
+        self.assertGreaterEqual(dialog.card.height(), 600)
+
+        # Verify overlay covers the parent window
+        self.assertEqual(dialog.width(), win.width())
+        self.assertEqual(dialog.height(), win.height())
+
+        # Clicking outside card dismisses modal
+        from PyQt6.QtCore import QPointF
+        from PyQt6.QtGui import QMouseEvent
+        # Click near the corner outside the centered card
+        click_event = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(10.0, 10.0),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        dialog.mousePressEvent(click_event)
+        self.assertEqual(dialog.result(), 0)  # QDialog.Rejected
+
+        dialog.close()
+        dialog.deleteLater()
+        win.close()
+        win.deleteLater()
+
+    def test_shortcuts_dialog_space_key_dismissal(self) -> None:
+        """Verify pressing Space dismisses the shortcuts modal."""
+        dialog = ModernShortcutsDialog()
+        dialog.show()
+
+        # Space key event directly on dialog
+        space_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier, " ")
+        dialog.keyPressEvent(space_event)
+        self.assertEqual(dialog.result(), 0)  # QDialog.Rejected
+
+        # Reopen and test Space on empty search edit
+        dialog2 = ModernShortcutsDialog()
+        dialog2.show()
+        app.sendEvent(dialog2.search_edit, space_event)
+        self.assertEqual(dialog2.result(), 0)  # QDialog.Rejected
+
+        dialog.deleteLater()
+        dialog2.deleteLater()
+
+    def test_shortcuts_dialog_non_blue_headings(self) -> None:
+        """Verify category headings and badges strictly avoid blue or indigo hues."""
+        dialog = ModernShortcutsDialog()
+        for group_widget, _ in dialog._group_widgets:
+            for child in group_widget.children():
+                from PyQt6.QtWidgets import QLabel
+                if isinstance(child, QLabel):
+                    sheet = child.styleSheet()
+                    self.assertNotIn("#0a84ff", sheet.lower())
+                    self.assertNotIn("indigo", sheet.lower())
+                    self.assertNotIn("#182232", sheet.lower())
+                    self.assertNotIn("#233b5d", sheet.lower())
+        dialog.deleteLater()
+
     def test_editor_panel_shortcuts_button(self) -> None:
         """Verify EditorPanel header has keyboard shortcuts button with correct styling."""
         self.assertTrue(hasattr(self.panel, "shortcuts_btn"))

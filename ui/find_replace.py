@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 from PyQt6.QtCore import QEvent, QPoint, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QKeyEvent
+from PyQt6.QtGui import QColor, QIcon, QKeyEvent
 from PyQt6.QtWidgets import (
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -56,11 +57,18 @@ class FindReplaceBar(QFrame):
     replace_current_requested = pyqtSignal(str)  # (replacement)
     replace_all_requested = pyqtSignal(str, str, bool, bool)  # (query, replacement, match_case, whole_word)
     closed = pyqtSignal()
+    replace_toggled = pyqtSignal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent=parent)
         self.setObjectName("FindReplaceBar")
         self._replace_visible: bool = False
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(16)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
 
         self.setStyleSheet("""
             QFrame#FindReplaceBar {
@@ -170,7 +178,7 @@ class FindReplaceBar(QFrame):
         self.find_input = CustomKeyLineEdit(parent=self)
         self.find_input.setObjectName("SearchLineEdit")
         self.find_input.setPlaceholderText("Find in note...")
-        self.find_input.setMinimumWidth(150)
+        self.find_input.setMinimumWidth(80)
         self.find_input.textChanged.connect(self._on_search_text_changed)
         self.find_input.enter_pressed.connect(self._on_find_enter)
         self.find_input.escape_pressed.connect(self.closed.emit)
@@ -181,6 +189,7 @@ class FindReplaceBar(QFrame):
         self.match_label = QLabel("No results", parent=self)
         self.match_label.setObjectName("MatchCountLabel")
         self.match_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.match_label.setMinimumWidth(38)
         row1.addWidget(self.match_label)
 
         # Match Case Button ("Aa")
@@ -188,7 +197,7 @@ class FindReplaceBar(QFrame):
         self.case_btn.setObjectName("SearchToggleBtn")
         self.case_btn.setCheckable(True)
         self.case_btn.setToolTip("Match Case (Alt+C)")
-        self.case_btn.setFixedSize(26, 22)
+        self.case_btn.setFixedSize(24, 22)
         self.case_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.case_btn.toggled.connect(self._on_search_text_changed)
         row1.addWidget(self.case_btn)
@@ -198,7 +207,7 @@ class FindReplaceBar(QFrame):
         self.word_btn.setObjectName("SearchToggleBtn")
         self.word_btn.setCheckable(True)
         self.word_btn.setToolTip("Match Whole Word (Alt+W)")
-        self.word_btn.setFixedSize(26, 22)
+        self.word_btn.setFixedSize(24, 22)
         self.word_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.word_btn.toggled.connect(self._on_search_text_changed)
         row1.addWidget(self.word_btn)
@@ -252,7 +261,7 @@ class FindReplaceBar(QFrame):
         self.replace_input = CustomKeyLineEdit(parent=self.replace_widget)
         self.replace_input.setObjectName("SearchLineEdit")
         self.replace_input.setPlaceholderText("Replace with...")
-        self.replace_input.setMinimumWidth(150)
+        self.replace_input.setMinimumWidth(80)
         self.replace_input.enter_pressed.connect(self._on_replace_enter)
         self.replace_input.escape_pressed.connect(self.closed.emit)
         self.replace_input.up_pressed.connect(self.focus_find)
@@ -292,6 +301,7 @@ class FindReplaceBar(QFrame):
         icon_dir = "down" if visible else "right"
         self.toggle_replace_btn.setIcon(create_chevron_icon(icon_dir, color="#8e8e94", size=14))
         self.adjustSize()
+        self.replace_toggled.emit(visible)
 
     def set_match_status(self, current: int, total: int) -> None:
         """Update match status count label (e.g. '3 / 14' or 'No results')."""
@@ -303,7 +313,7 @@ class FindReplaceBar(QFrame):
             self.prev_btn.setEnabled(False)
             self.next_btn.setEnabled(False)
         else:
-            self.match_label.setText(f"{current} / {total}")
+            self.match_label.setText(f"{current}/{total}")
             self.replace_btn.setEnabled(True)
             self.replace_all_btn.setEnabled(True)
             self.prev_btn.setEnabled(True)

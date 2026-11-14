@@ -20,6 +20,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPaintEvent,
     QPen,
+    QResizeEvent,
     QTextBlock,
     QTextBlockFormat,
     QTextCursor,
@@ -2345,18 +2346,53 @@ class EditorPanel(QWidget):
         self.find_replace_bar.replace_current_requested.connect(self._on_replace_current)
         self.find_replace_bar.replace_all_requested.connect(self._on_replace_all)
         self.find_replace_bar.closed.connect(self.close_find)
+        self.find_replace_bar.replace_toggled.connect(self._on_find_replace_toggled)
 
         self.editor.find_requested.connect(self.open_find)
         self.editor.find_close_requested.connect(self.close_find)
 
-        find_container = QHBoxLayout()
-        find_container.setContentsMargins(0, 0, 0, 2)
-        find_container.addStretch()
-        find_container.addWidget(self.find_replace_bar)
         self.find_replace_bar.setVisible(False)
-        layout.addLayout(find_container)
 
         layout.addWidget(self.editor)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Reposition the floating Find & Replace bar when the editor panel is resized."""
+        super().resizeEvent(event)
+        if hasattr(self, "find_replace_bar") and self.find_replace_bar.isVisible():
+            self._update_find_bar_geometry()
+
+    def _update_find_bar_geometry(self) -> None:
+        """Position Find & Replace bar as a responsive floating overlay below the top-right header."""
+        if not hasattr(self, "find_replace_bar"):
+            return
+
+        margin_right = 16
+        available_w = max(240, self.width() - (margin_right * 2))
+
+        # Responsive width: comfortably up to 400px on wide screens, adapting smoothly on narrow screens
+        preferred_w = int(available_w * 0.45)
+        bar_w = min(400, max(min(340, available_w), preferred_w))
+        if bar_w > available_w:
+            bar_w = available_w
+
+        # Vertical position: anchored directly below the header
+        top_y = 40
+        if hasattr(self, "export_btn") and self.export_btn.isVisible():
+            btn_bottom = self.export_btn.geometry().bottom()
+            if btn_bottom > 0:
+                top_y = btn_bottom + 6
+
+        # Height based on sizeHint (accounts for whether Replace row is open)
+        h = self.find_replace_bar.sizeHint().height()
+        if h <= 0:
+            h = 76 if getattr(self.find_replace_bar, "_replace_visible", False) else 42
+
+        x = max(margin_right, self.width() - bar_w - margin_right)
+        self.find_replace_bar.setGeometry(x, top_y, bar_w, h)
+
+    def _on_find_replace_toggled(self, visible: bool) -> None:
+        """Recompute floating overlay geometry when Replace row is expanded or collapsed."""
+        self._update_find_bar_geometry()
 
     def open_find(self, replace_mode: bool = False) -> None:
         """Display Find & Replace bar and prefill with current selection if any."""
@@ -2370,7 +2406,9 @@ class EditorPanel(QWidget):
                     self.find_replace_bar.find_input.setText(sel_text)
 
         self.find_replace_bar.set_replace_visible(replace_mode)
+        self._update_find_bar_geometry()
         self.find_replace_bar.show()
+        self.find_replace_bar.raise_()
         if replace_mode and self.find_replace_bar.find_input.text().strip():
             self.find_replace_bar.focus_replace()
         else:

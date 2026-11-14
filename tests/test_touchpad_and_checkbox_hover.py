@@ -386,6 +386,89 @@ class TestTouchpadAndCheckboxHover(unittest.TestCase):
             "- Features: more items",
         )
 
+    def test_checked_task_dimming_with_inline_formatting(self) -> None:
+        """Verify that completed checkbox tasks dim all inline formatting (bold, italic, underline, code)."""
+        from PyQt6.QtGui import QFont
+
+        # 1. Checked checkbox with bold, italic, underline, and code
+        self.editor.setPlainText("- [x] Done **bold** and *italic* and <u>underline</u> and `code`")
+        self.app.processEvents()
+
+        block = self.editor.document().firstBlock()
+        ranges = block.layout().formats()
+
+        slice_map = {}
+        for r in ranges:
+            text_slice = block.text()[r.start : r.start + r.length]
+            slice_map[text_slice] = r.format
+
+        dim_color = "#787880"
+        self.assertIn("bold", slice_map)
+        self.assertEqual(slice_map["bold"].fontWeight(), QFont.Weight.Bold)
+        self.assertEqual(slice_map["bold"].foreground().color().name(), dim_color)
+
+        self.assertIn("italic", slice_map)
+        self.assertTrue(slice_map["italic"].fontItalic())
+        self.assertEqual(slice_map["italic"].foreground().color().name(), dim_color)
+
+        self.assertIn("underline", slice_map)
+        self.assertTrue(slice_map["underline"].fontUnderline())
+        self.assertEqual(slice_map["underline"].foreground().color().name(), dim_color)
+
+        self.assertIn("code", slice_map)
+        self.assertEqual(slice_map["code"].foreground().color().name(), dim_color)
+
+        # 2. Unchecked checkbox retains bright formatting colors
+        self.editor.setPlainText("- [ ] Todo **bold** and *italic* and <u>underline</u>")
+        self.app.processEvents()
+
+        block_uncheck = self.editor.document().firstBlock()
+        ranges_uncheck = block_uncheck.layout().formats()
+
+        slice_map_uncheck = {}
+        for r in ranges_uncheck:
+            text_slice = block_uncheck.text()[r.start : r.start + r.length]
+            slice_map_uncheck[text_slice] = r.format
+
+        self.assertIn("bold", slice_map_uncheck)
+        self.assertEqual(slice_map_uncheck["bold"].fontWeight(), QFont.Weight.Bold)
+        self.assertEqual(slice_map_uncheck["bold"].foreground().color().name(), "#ffffff")
+
+        self.assertIn("italic", slice_map_uncheck)
+        self.assertTrue(slice_map_uncheck["italic"].fontItalic())
+        self.assertEqual(slice_map_uncheck["italic"].foreground().color().name(), "#dcdcdc")
+
+    def test_checkbox_toggle_zero_layout_shift(self) -> None:
+        """Verify that checking and unchecking a checkbox does not shift the text or checkbox position."""
+        self.editor.setPlainText("- [ ] Layout stability test task")
+        self.app.processEvents()
+
+        block = self.editor.document().firstBlock()
+        cursor_text = self.editor.textCursor()
+        cursor_text.setPosition(6)  # Start of task text after '- [ ] '
+        rect_text_uncheck = self.editor.cursorRect(cursor_text)
+
+        cursor_cb = self.editor.textCursor()
+        cursor_cb.setPosition(0)
+        rect_cb_uncheck = self.editor.cursorRect(cursor_cb)
+
+        # Toggle to checked
+        self.editor._toggle_checkbox_at_block(block)
+        self.app.processEvents()
+
+        block_after = self.editor.document().firstBlock()
+        cursor_text.setPosition(6)  # Start of task text after '- [x] '
+        rect_text_check = self.editor.cursorRect(cursor_text)
+
+        cursor_cb.setPosition(0)
+        rect_cb_check = self.editor.cursorRect(cursor_cb)
+
+        # Verify zero shift in both text starting point and checkbox origin
+        self.assertEqual(rect_text_uncheck.x(), rect_text_check.x())
+        self.assertEqual(rect_text_uncheck.y(), rect_text_check.y())
+        self.assertEqual(rect_cb_uncheck.x(), rect_cb_check.x())
+        self.assertEqual(rect_cb_uncheck.y(), rect_cb_check.y())
+
 
 if __name__ == "__main__":
     unittest.main()

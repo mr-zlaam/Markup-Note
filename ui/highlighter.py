@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from PyQt6.QtGui import (
     QColor,
     QFont,
+    QFontMetricsF,
     QSyntaxHighlighter,
     QTextCharFormat,
     QTextDocument,
@@ -167,6 +168,20 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # Checkboxes (transparent prefix preserving full line height and natural spacing to text)
         self.checkbox_prefix_format = QTextCharFormat()
         self.checkbox_prefix_format.setForeground(QColor(0, 0, 0, 0))
+
+        # Checkbox 'x' compensation format (aligns '- [x] ' advance with '- [ ] ' to prevent layout shift)
+        self.checkbox_x_format = QTextCharFormat()
+        self.checkbox_x_format.setForeground(QColor(0, 0, 0, 0))
+        self.checkbox_x_format.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+        self._update_checkbox_x_format()
+
+    def _update_checkbox_x_format(self) -> None:
+        """Align the horizontal advance of '- [x] ' with '- [ ] ' to prevent layout shift."""
+        doc = self.document()
+        font = doc.defaultFont() if doc is not None else QFont("Cantarell", 16)
+        fm = QFontMetricsF(font)
+        diff = max(0.0, fm.horizontalAdvance("x") - fm.horizontalAdvance(" "))
+        self.checkbox_x_format.setFontLetterSpacing(-diff)
 
         # Strikethrough (~~strike~~)
         self.strike_format = QTextCharFormat()
@@ -401,6 +416,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 self._format(text, 0, prefix_len, self.hidden_format)
 
         # 4. Checkboxes (- [ ] / - [] / - [x])
+        is_checked = False
         cb_match = CHECKBOX_RE.match(text) if not h_match else None
         if cb_match:
             indent, prefix, status, _ = cb_match.groups()
@@ -410,6 +426,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             self._format(text, prefix_start, prefix_len, self.checkbox_prefix_format)
 
             if is_checked:
+                # Eliminate horizontal layout shift between '[ ]' and '[x]'
+                bracket_open = text.find("[", prefix_start)
+                if bracket_open != -1:
+                    self._format(text, bracket_open + 1, 1, self.checkbox_x_format)
                 text_start = prefix_start + prefix_len
                 self._format(text, text_start, len(text) - text_start, self.checked_task_format)
 
@@ -433,6 +453,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 p_start = len(prefix) + len(l_indent)
                 self._format(text, p_start, len(l_prefix), self.checkbox_prefix_format)
                 if l_status.lower() == "x":
+                    is_checked = True
+                    bracket_open = text.find("[", p_start)
+                    if bracket_open != -1:
+                        self._format(text, bracket_open + 1, 1, self.checkbox_x_format)
                     t_start = p_start + len(l_prefix)
                     self._format(text, t_start, len(text) - t_start, self.checked_task_format)
             else:
@@ -476,7 +500,9 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                     self._format(text, m_start + len(marker), len(space), self.ordered_list_space_format)
 
         # 7. Inline formatting (**bold**, *italic*, `code`, ~~strike~~, [link](url), $math$, HTML, #tag)
-        self._apply_inline_rules(text, is_active, base_point_size, base_bold, base_color)
+        self._apply_inline_rules(
+            text, is_active, base_point_size, base_bold, base_color, is_checked=is_checked
+        )
 
     def _apply_inline_rules(
         self,
@@ -485,8 +511,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         base_point_size: Optional[int],
         base_bold: bool,
         base_color: Optional[QColor],
+        is_checked: bool = False,
     ) -> None:
         """Apply inline markdown styles and hide syntax markers when line is inactive."""
+        dim_color = self.checked_task_format.foreground().color()
+
         # Bold: **text** or __text__ and Italic: *text*
         if "*" in text or "_" in text:
             for m in BOLD_RE.finditer(text):
@@ -496,7 +525,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
                 fmt.setFontWeight(QFont.Weight.Bold)
-                fmt.setForeground(QColor("#ffffff"))
+                if is_checked:
+                    fmt.setForeground(dim_color)
+                else:
+                    fmt.setForeground(QColor("#ffffff"))
                 self._format(text, start + marker_len, (end - start) - 2 * marker_len, fmt)
                 self._format_markers(text, start, end, marker_len, is_active, base_point_size)
 
@@ -508,7 +540,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 if base_bold:
                     fmt.setFontWeight(QFont.Weight.Bold)
                 fmt.setFontItalic(True)
-                fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
+                if is_checked:
+                    fmt.setForeground(dim_color)
+                else:
+                    fmt.setForeground(base_color if base_color else QColor("#dcdcdc"))
                 self._format(text, start + 1, (end - start) - 2, fmt)
                 self._format_markers(text, start, end, 1, is_active, base_point_size)
 
@@ -519,6 +554,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.inline_code_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if is_checked:
+                    fmt.setForeground(dim_color)
                 self._format(text, start + 1, (end - start) - 2, fmt)
                 self._format_markers(text, start, end, 1, is_active, base_point_size)
 
@@ -539,6 +576,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                     fmt = QTextCharFormat(self.math_source_format)
                     if base_point_size:
                         fmt.setFontPointSize(base_point_size)
+                    if is_checked:
+                        fmt.setForeground(dim_color)
                     self._format(text, start + open_len, (end - close_len) - (start + open_len), fmt)
                     self._format(text, start, open_len, self.marker_format)
                     self._format(text, end - close_len, close_len, self.marker_format)
@@ -561,6 +600,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.strike_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if is_checked:
+                    fmt.setForeground(dim_color)
                 self._format(text, start + tildes, (end - start) - 2 * tildes, fmt)
                 self._format_markers(text, start, end, tildes, is_active, base_point_size)
 
@@ -573,6 +614,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.u_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if is_checked:
+                    fmt.setForeground(dim_color)
                 self._format(text, g2_s, g2_e - g2_s, fmt)
                 syn_fmt = self.marker_format if is_active else self.hidden_format
                 self._format(text, g1_s, g1_e - g1_s, syn_fmt)
@@ -585,6 +628,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.mark_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if is_checked:
+                    fmt.setForeground(dim_color)
                 self._format(text, g2_s, g2_e - g2_s, fmt)
                 syn_fmt = self.marker_format if is_active else self.hidden_format
                 self._format(text, g1_s, g1_e - g1_s, syn_fmt)
@@ -600,6 +645,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 if not is_active:
                     fmt.setForeground(QColor(0, 0, 0, 0))
                     fmt.setBackground(QColor(0, 0, 0, 0))
+                elif is_checked:
+                    fmt.setForeground(dim_color)
                 self._format(text, g2_s, g2_e - g2_s, fmt)
                 syn_fmt = self.marker_format if is_active else self.hidden_format
                 self._format(text, g1_s, g1_e - g1_s, syn_fmt)
@@ -614,6 +661,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 fmt = QTextCharFormat(self.link_format)
                 if base_point_size:
                     fmt.setFontPointSize(base_point_size)
+                if is_checked:
+                    fmt.setForeground(dim_color)
                 if base_bold:
                     fmt.setFontWeight(QFont.Weight.Bold)
                 else:
@@ -632,6 +681,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                         im_len = (im.end() - im.start()) - 2 * len(im.group(1))
                         b_fmt = QTextCharFormat(fmt)
                         b_fmt.setFontWeight(QFont.Weight.Bold)
+                        if is_checked:
+                            b_fmt.setForeground(dim_color)
                         self._format(text, im_s, im_len, b_fmt)
                 syntax_fmt = self.marker_format if is_active else self.hidden_format
                 self._format(text, g1_start, g1_end - g1_start, syntax_fmt)
@@ -641,7 +692,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         if "#" in text and not base_point_size:
             for m in TAG_RE.finditer(text):
                 start, end = m.span(1)
-                self._format(text, start, end - start, self.tag_format)
+                if is_checked:
+                    fmt = QTextCharFormat(self.tag_format)
+                    fmt.setForeground(dim_color)
+                    self._format(text, start, end - start, fmt)
+                else:
+                    self._format(text, start, end - start, self.tag_format)
 
     def _format_markers(
         self,

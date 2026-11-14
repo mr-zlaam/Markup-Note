@@ -82,6 +82,7 @@ fi
 echo "==> Running flatpak-builder..."
 flatpak-builder \
     --force-clean \
+    --disable-rofiles-fuse \
     --repo="$REPO_DIR" \
     "${EXTRA_ARGS[@]}" \
     "$BUILD_DIR" \

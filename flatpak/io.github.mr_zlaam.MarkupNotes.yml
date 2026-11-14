@@ -73,7 +73,7 @@ modules:
     buildsystem: simple
     build-commands:
       - mkdir -p /app/share/markup-notes /app/bin
-      - cp -r main.py ui core utils assets /app/share/markup-notes/
+      - cp -r main.py ui core utils storage assets /app/share/markup-notes/
       - |
         cat << 'EOF' > /app/bin/markup-notes
         #!/bin/sh

@@ -9,7 +9,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 from typing import List, Optional, Tuple
+import urllib.parse
 
 
 @dataclass
@@ -62,12 +64,55 @@ class GitManager:
     def __init__(self, repo_path: Path) -> None:
         self.repo_path = repo_path.resolve()
 
-    def _run_git(self, args: List[str], timeout: int = 15) -> Tuple[int, str, str]:
+    @staticmethod
+    def sanitize_remote_url(url: str) -> str:
+        """Strip embedded credentials from remote URLs to prevent disk leaks in .git/config."""
+        if not url:
+            return ""
+        parsed = urllib.parse.urlparse(url.strip())
+        if parsed.scheme in ("http", "https") and ("@" in parsed.netloc or parsed.password or parsed.username):
+            netloc = parsed.hostname or ""
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urllib.parse.urlunparse(
+                (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+            )
+        return url.strip()
+
+    def _run_git(
+        self,
+        args: List[str],
+        timeout: int = 15,
+        token: Optional[str] = None,
+        env: Optional[dict] = None,
+    ) -> Tuple[int, str, str]:
         """Execute a git subcommand in repo_path with timeout and error handling."""
         if not self.is_git_installed():
             return (1, "", "Git is not installed on this system.")
 
-        cmd = ["git", *args]
+        run_env = os.environ.copy()
+        extra_args: List[str] = []
+
+        if token and token.strip():
+            base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+            askpass_path: Optional[Path] = None
+            for name in ("git_askpass.sh", "git_askpass.py"):
+                candidate = base_dir / "utils" / name
+                if candidate.exists():
+                    askpass_path = candidate
+                    break
+
+            if askpass_path and askpass_path.exists():
+                run_env["GIT_ASKPASS"] = str(askpass_path)
+                run_env["MARKUP_NOTES_GIT_TOKEN"] = token.strip()
+                run_env["MARKUP_NOTES_GIT_USER"] = "oauth2"
+                run_env["GIT_TERMINAL_PROMPT"] = "0"
+                extra_args = ["-c", "credential.helper="]
+
+        if env:
+            run_env.update(env)
+
+        cmd = ["git", *extra_args, *args]
         try:
             res = subprocess.run(
                 cmd,
@@ -75,6 +120,7 @@ class GitManager:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=run_env,
             )
             return (res.returncode, res.stdout.strip(), res.stderr.strip())
         except subprocess.TimeoutExpired:
@@ -140,6 +186,18 @@ class GitManager:
         # 2. Remote URL
         code_rem, rem_out, _ = self._run_git(["remote", "get-url", "origin"])
         remote_url = rem_out if code_rem == 0 and rem_out else None
+        if remote_url:
+            clean_url = self.sanitize_remote_url(remote_url)
+            if clean_url != remote_url:
+                try:
+                    parsed = urllib.parse.urlparse(remote_url)
+                    if parsed.password:
+                        from storage.credential_store import CredentialStore
+                        CredentialStore().save_token(parsed.password)
+                except Exception:
+                    pass
+                self._run_git(["remote", "set-url", "origin", clean_url])
+                remote_url = clean_url
 
         # 3. Status changes via porcelain
         code_st, st_out, err_st = self._run_git(["status", "--porcelain=v1", "-uall"])
@@ -231,19 +289,49 @@ class GitManager:
             return code == 0
         return True
 
-    def fetch(self, remote: str = "origin") -> Tuple[bool, str]:
+    @staticmethod
+    def _get_stored_token() -> Optional[str]:
+        """Retrieve token from CredentialStore if available."""
+        try:
+            from storage.credential_store import CredentialStore
+            return CredentialStore().get_token()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_auth_failure(message: str) -> bool:
+        """Check if Git output indicates an expired, invalid, or unauthorized token."""
+        msg_lower = (message or "").lower()
+        return any(
+            hint in msg_lower
+            for hint in (
+                "authentication failed",
+                "invalid username or token",
+                "bad credentials",
+                "password authentication is not supported",
+                "could not read username",
+                "terminal prompts disabled",
+                "401",
+                "403",
+            )
+        )
+
+    def fetch(self, remote: str = "origin", token: Optional[str] = None) -> Tuple[bool, str]:
         """Fetch latest commits and branches from remote repository."""
         if not self.is_repo():
             return (False, "Not a Git repository.")
         status = self.get_status()
         if not status.remote_url:
             return (False, "No remote repository configured.")
-        code, out, err = self._run_git(["fetch", remote, status.branch], timeout=35)
+        active_token = token or self._get_stored_token()
+        code, out, err = self._run_git(["fetch", remote, status.branch], timeout=35, token=active_token)
         if code != 0:
+            if self._is_auth_failure(err or out):
+                return (False, "GitHub token is invalid or expired. Please generate a new token.")
             return (False, err or out or "Fetch failed.")
         return (True, out or "Fetched remote updates.")
 
-    def pull(self, remote: str = "origin") -> Tuple[bool, str]:
+    def pull(self, remote: str = "origin", token: Optional[str] = None) -> Tuple[bool, str]:
         """Safely import and merge remote changes with two-way conflict preservation."""
         if not self.is_repo():
             return (False, "Not a Git repository.")
@@ -251,6 +339,8 @@ class GitManager:
         status = self.get_status()
         if not status.remote_url:
             return (False, "No remote repository configured.")
+
+        active_token = token or self._get_stored_token()
 
         # 1. Recover from any stale rebase state
         if self.is_in_rebase():
@@ -263,12 +353,16 @@ class GitManager:
                 return (False, f"Cannot sync: failed to commit local changes ({msg_com})")
 
         # 3. Fetch from remote
-        code_fetch, out_fetch, err_fetch = self._run_git(["fetch", remote, status.branch], timeout=35)
+        code_fetch, out_fetch, err_fetch = self._run_git(
+            ["fetch", remote, status.branch], timeout=35, token=active_token
+        )
         if code_fetch != 0:
             # If remote branch doesn't exist yet (brand new empty remote repo on GitHub), that's expected
             err_lower = (err_fetch or out_fetch).lower()
             if "couldn't find remote ref" in err_lower or "no tracking" in err_lower:
                 return (True, "Remote repository is empty, ready for first push.")
+            if self._is_auth_failure(err_fetch or out_fetch):
+                return (False, "GitHub token is invalid or expired. Please generate a new token.")
             return (False, f"Fetch failed: {err_fetch or out_fetch}")
 
         remote_ref = f"{remote}/{status.branch}"
@@ -345,7 +439,7 @@ class GitManager:
 
         return (True, "Successfully imported and merged remote notes.")
 
-    def push(self, remote: str = "origin") -> Tuple[bool, str]:
+    def push(self, remote: str = "origin", token: Optional[str] = None) -> Tuple[bool, str]:
         """Push local commits to remote branch."""
         if not self.is_repo():
             return (False, "Not a Git repository.")
@@ -354,12 +448,15 @@ class GitManager:
         if not status.remote_url:
             return (False, "No remote repository configured.")
 
-        code, out, err = self._run_git(["push", "-u", remote, status.branch], timeout=35)
+        active_token = token or self._get_stored_token()
+        code, out, err = self._run_git(["push", "-u", remote, status.branch], timeout=35, token=active_token)
         if code != 0:
+            if self._is_auth_failure(err or out):
+                return (False, "GitHub token is invalid or expired. Please generate a new token.")
             return (False, err or out or "Push failed.")
         return (True, out or "Pushed to remote.")
 
-    def sync(self, message: Optional[str] = None) -> Tuple[bool, str]:
+    def sync(self, message: Optional[str] = None, token: Optional[str] = None) -> Tuple[bool, str]:
         """All-in-one sync: commit local notes, pull and merge remote, and push to GitHub."""
         if not self.is_repo():
             ok_init, msg_init = self.init_repo()
@@ -376,13 +473,13 @@ class GitManager:
         # 2. Pull & merge from remote if configured
         status = self.get_status()
         if status.remote_url:
-            ok_pull, msg_pull = self.pull()
+            ok_pull, msg_pull = self.pull(token=token)
             if not ok_pull:
                 return (False, f"Pull/Merge failed: {msg_pull}")
 
         # 3. Push to remote if configured
         if status.remote_url:
-            ok_push, msg_push = self.push()
+            ok_push, msg_push = self.push(token=token)
             if not ok_push:
                 return (False, f"Merged locally, but push failed: {msg_push}")
             return (True, "Synchronized and backed up to GitHub successfully.")
@@ -465,23 +562,33 @@ class GitManager:
         return (False, err or "Could not revert file.")
 
     def set_remote(self, url: str, remote_name: str = "origin") -> Tuple[bool, str]:
-        """Configure or update the remote repository URL."""
+        """Configure or update the remote repository URL, ensuring credentials are not leaked."""
         if not self.is_repo():
             ok, msg = self.init_repo()
             if not ok:
                 return (False, msg)
 
+        clean_url = self.sanitize_remote_url(url)
+        if clean_url != url.strip():
+            try:
+                parsed = urllib.parse.urlparse(url.strip())
+                if parsed.password:
+                    from storage.credential_store import CredentialStore
+                    CredentialStore().save_token(parsed.password)
+            except Exception:
+                pass
+
         # Check if remote already exists
         code, _, _ = self._run_git(["remote", "get-url", remote_name])
         if code == 0:
-            code_set, _, err_set = self._run_git(["remote", "set-url", remote_name, url.strip()])
+            code_set, _, err_set = self._run_git(["remote", "set-url", remote_name, clean_url])
         else:
-            code_set, _, err_set = self._run_git(["remote", "add", remote_name, url.strip()])
+            code_set, _, err_set = self._run_git(["remote", "add", remote_name, clean_url])
 
         if code_set != 0:
             return (False, err_set or "Failed to set remote repository.")
 
-        return (True, f"Remote '{remote_name}' set to {url.strip()}")
+        return (True, f"Remote '{remote_name}' set to {clean_url}")
 
     def get_remote(self, remote_name: str = "origin") -> Optional[str]:
         """Get the configured remote URL or None."""

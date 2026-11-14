@@ -947,6 +947,51 @@ def create_diff_icon(color: str = "#8e8e93", size: int = 14, stroke_width: float
     return QIcon(pixmap)
 
 
+def create_eye_icon(
+    open_eye: bool = True,
+    color: str = "#8e8e93",
+    size: int = 16,
+    stroke_width: float = 1.4,
+) -> QIcon:
+    """Generate a crisp vector eye or eye-off icon for password visibility toggling."""
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.setDevicePixelRatio(2.0)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    pen = QPen(QColor(color), stroke_width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    cx = float(size) / 2.0
+    cy = float(size) / 2.0
+
+    # Eye outline using two smooth cubic bezier arcs
+    left_x, right_x = 2.0, float(size) - 2.0
+    eye_path = QPainterPath()
+    eye_path.moveTo(left_x, cy)
+    eye_path.cubicTo(QPointF(cx - 3.2, cy - 4.2), QPointF(cx + 3.2, cy - 4.2), QPointF(right_x, cy))
+    eye_path.cubicTo(QPointF(cx + 3.2, cy + 4.2), QPointF(cx - 3.2, cy + 4.2), QPointF(left_x, cy))
+    painter.drawPath(eye_path)
+
+    # Center pupil circle
+    painter.drawEllipse(QPointF(cx, cy), 2.1, 2.1)
+
+    # Diagonal slash if closed/off
+    if not open_eye:
+        slash_pen = QPen(QColor(color), stroke_width + 0.1)
+        slash_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(slash_pen)
+        painter.drawLine(QPointF(2.5, 2.5), QPointF(float(size) - 2.5, float(size) - 2.5))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def ensure_chevron_assets(target_dir: Optional[Path] = None) -> Tuple[Path, Path]:
     """Ensure crisp high-DPI vector chevron PNGs exist for QTreeWidget branch styling."""
     assets_dir = (

@@ -14,6 +14,7 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.paths import get_config_dir
+from storage.credential_store import CredentialStore
 
 
 @dataclass
@@ -48,23 +49,38 @@ class GitHubClient:
         self.config_dir = config_dir if config_dir is not None else get_config_dir()
         self.auth_file = self.config_dir / "github_auth.json"
         self.check_cli_fallback = check_cli_fallback if check_cli_fallback is not None else (config_dir is None)
+        self.credential_store = CredentialStore(config_dir=self.config_dir)
 
     def get_token(self) -> Optional[str]:
-        """Retrieve stored GitHub token from secure local configuration."""
-        if not self.auth_file.exists():
-            # Check if GitHub CLI has an active token as fallback
-            if self.check_cli_fallback:
-                gh_token = self._get_gh_cli_token()
-                if gh_token:
-                    return gh_token
-            return None
+        """Retrieve stored GitHub token from secure credential storage (migrating plaintext tokens if present)."""
+        # 1. Automatic migration: if a legacy plaintext token exists in github_auth.json, move it to CredentialStore
+        if self.auth_file.exists():
+            try:
+                data = json.loads(self.auth_file.read_text(encoding="utf-8"))
+                legacy_token = data.get("token")
+                if legacy_token and str(legacy_token).strip():
+                    self.credential_store.save_token(str(legacy_token).strip())
+                    del data["token"]
+                    self.auth_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    try:
+                        os.chmod(self.auth_file, 0o600)
+                    except OSError:
+                        pass
+            except (OSError, json.JSONDecodeError):
+                pass
 
-        try:
-            data = json.loads(self.auth_file.read_text(encoding="utf-8"))
-            token = data.get("token")
-            return str(token).strip() if token else None
-        except (OSError, json.JSONDecodeError):
-            return None
+        # 2. Retrieve token from secure credential store
+        token = self.credential_store.get_token()
+        if token:
+            return token
+
+        # 3. Fallback to active GitHub CLI session if configured
+        if self.check_cli_fallback:
+            gh_token = self._get_gh_cli_token()
+            if gh_token:
+                return gh_token
+
+        return None
 
     def save_token(
         self,
@@ -72,26 +88,35 @@ class GitHubClient:
         login: str = "",
         repo_url: str = "",
     ) -> bool:
-        """Persist GitHub token and metadata with secure 0600 file permissions."""
+        """Persist GitHub token securely into CredentialStore and save non-sensitive metadata to disk."""
+        token_clean = token.strip()
+        if not token_clean:
+            return False
+
+        # 1. Save secret token into secure credential storage
+        ok_secret = self.credential_store.save_token(token_clean)
+
+        # 2. Persist profile metadata (WITHOUT the secret token) to local config
         self.config_dir.mkdir(parents=True, exist_ok=True)
         payload = {
-            "token": token.strip(),
             "login": login.strip(),
             "repo_url": repo_url.strip(),
         }
         try:
-            # Write with restricted permissions
-            self.auth_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            temp_path = self.auth_file.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             try:
-                os.chmod(self.auth_file, 0o600)
+                os.chmod(temp_path, 0o600)
             except OSError:
                 pass
-            return True
+            temp_path.replace(self.auth_file)
+            return ok_secret
         except OSError:
             return False
 
     def clear_token(self) -> bool:
-        """Remove stored credentials on sign-out."""
+        """Remove stored credentials and profile metadata on sign-out."""
+        self.credential_store.delete_token()
         if self.auth_file.exists():
             try:
                 self.auth_file.unlink()
@@ -185,7 +210,7 @@ class GitHubClient:
             return (True, user, "Token verified successfully.")
 
         if code == 401:
-            return (False, None, "Invalid GitHub token. Please check permissions.")
+            return (False, None, "GitHub token is invalid or expired. Please generate a new token.")
 
         return (False, None, err or f"Verification failed with status {code}")
 
@@ -231,14 +256,18 @@ class GitHubClient:
 
         return (False, None, err or f"Failed to create repository ({code})")
 
-    def build_authenticated_remote_url(self, clone_url: str, token: str) -> str:
-        """Inject GitHub token into HTTPS clone URL for passwordless git push/pull."""
-        parsed = urllib.parse.urlparse(clone_url)
+    def build_authenticated_remote_url(self, clone_url: str, token: str = "") -> str:
+        """Return clean remote clone URL without embedding plaintext credentials.
+
+        Authentication is handled dynamically in-memory during git operations via askpass,
+        ensuring tokens are never persisted in .git/config on disk.
+        """
+        parsed = urllib.parse.urlparse(clone_url.strip())
         if parsed.scheme in ("http", "https"):
-            netloc = f"oauth2:{token.strip()}@{parsed.hostname}"
+            netloc = parsed.hostname or ""
             if parsed.port:
                 netloc += f":{parsed.port}"
             return urllib.parse.urlunparse(
                 (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
             )
-        return clone_url
+        return clone_url.strip()

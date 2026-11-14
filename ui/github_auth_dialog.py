@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from PyQt6.QtCore import QSize, Qt, QUrl
-from PyQt6.QtGui import QColor, QDesktopServices, QIcon
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QUrl
+from PyQt6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -18,7 +25,66 @@ from PyQt6.QtWidgets import (
 )
 
 from core.github_client import GitHubClient, GitHubUser
-from utils.icons import create_github_icon
+from utils.icons import create_eye_icon, create_github_icon
+
+
+class ModernCheckBox(QCheckBox):
+    """Clean dark-themed checkbox with custom vector checkmark."""
+
+    def __init__(self, text: str = "", parent: Optional[QWidget] = None) -> None:
+        super().__init__(text, parent=parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(24)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        indicator_size = 16
+        y_pos = (self.height() - indicator_size) // 2
+        box_rect = QRectF(0.0, float(y_pos), float(indicator_size), float(indicator_size))
+
+        is_checked = self.isChecked()
+        is_hover = self.underMouse()
+
+        if is_checked:
+            bg_color = QColor("#0071e3") if is_hover else QColor("#0a84ff")
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bg_color)
+            painter.drawRoundedRect(box_rect, 4.0, 4.0)
+
+            # Draw crisp white checkmark
+            pen = QPen(QColor("#ffffff"), 1.8)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
+            path = QPainterPath()
+            path.moveTo(box_rect.left() + 3.8, box_rect.top() + 7.8)
+            path.lineTo(box_rect.left() + 6.6, box_rect.top() + 11.2)
+            path.lineTo(box_rect.left() + 12.2, box_rect.top() + 4.8)
+            painter.drawPath(path)
+        else:
+            border_color = QColor("#5c5c68") if is_hover else QColor("#484852")
+            painter.setPen(QPen(border_color, 1.2))
+            painter.setBrush(QColor("#1a1a1e"))
+            painter.drawRoundedRect(box_rect.adjusted(0.6, 0.6, -0.6, -0.6), 4.0, 4.0)
+
+        # Draw label text
+        if self.text():
+            painter.setPen(QColor("#d0d0d8"))
+            f = self.font()
+            f.setPointSize(10)
+            painter.setFont(f)
+            text_rect = self.rect().adjusted(indicator_size + 8, 0, 0, 0)
+            painter.drawText(
+                text_rect,
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                self.text(),
+            )
+
+        painter.end()
 
 
 class ModernGitHubAuthDialog(QDialog):
@@ -27,7 +93,7 @@ class ModernGitHubAuthDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Connect GitHub Backup")
-        self.setFixedWidth(460)
+        self.setFixedWidth(480)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         self.github_client = GitHubClient()
@@ -84,8 +150,9 @@ class ModernGitHubAuthDialog(QDialog):
                 font-weight: 600;
                 border: none;
                 border-radius: 7px;
-                padding: 9px 20px;
+                padding: 8px 20px;
                 font-size: 13px;
+                min-height: 20px;
             }
             QPushButton#PrimaryBtn:hover {
                 background-color: #0071e3;
@@ -99,12 +166,23 @@ class ModernGitHubAuthDialog(QDialog):
                 color: #d6d6dc;
                 border: 1px solid #3a3a42;
                 border-radius: 7px;
-                padding: 9px 16px;
+                padding: 8px 16px;
                 font-size: 13px;
+                min-height: 20px;
             }
             QPushButton#SecondaryBtn:hover {
                 background-color: #383840;
                 color: #ffffff;
+            }
+            QPushButton#IconButton {
+                background-color: #2c2c32;
+                border: 1px solid #3a3a42;
+                border-radius: 7px;
+                padding: 0;
+            }
+            QPushButton#IconButton:hover {
+                background-color: #383840;
+                border-color: #4a4a54;
             }
             QCheckBox {
                 font-size: 12px;
@@ -127,6 +205,7 @@ class ModernGitHubAuthDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(26, 24, 26, 22)
         layout.setSpacing(14)
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
         # Header with GitHub Logo
         hdr_layout = QHBoxLayout()
@@ -157,8 +236,16 @@ class ModernGitHubAuthDialog(QDialog):
         step1_lbl.setObjectName("FieldLabel")
         step1_box.addWidget(step1_lbl)
 
-        btn_open_github = QPushButton("Open GitHub Token Generator ↗", parent=self)
+        step1_hint = QLabel(
+            "Scope 'repo' is pre-selected. Simply scroll down and click 'Generate token'.",
+            parent=self,
+        )
+        step1_hint.setStyleSheet("font-size: 11px; color: #8e8e93;")
+        step1_box.addWidget(step1_hint)
+
+        btn_open_github = QPushButton("Open GitHub Token Generator", parent=self)
         btn_open_github.setObjectName("SecondaryBtn")
+        btn_open_github.setFixedHeight(36)
         btn_open_github.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_open_github.clicked.connect(self._open_token_page)
         step1_box.addWidget(btn_open_github)
@@ -175,15 +262,19 @@ class ModernGitHubAuthDialog(QDialog):
         token_row.setSpacing(8)
         self.token_input = QLineEdit(parent=self)
         self.token_input.setObjectName("ModernInput")
+        self.token_input.setFixedHeight(38)
         self.token_input.setPlaceholderText("ghp_xxxxxxxxxxxxxxxxxxxx")
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_input.returnPressed.connect(self._do_verify_and_connect)
         self.token_input.textChanged.connect(self._on_token_changed)
         token_row.addWidget(self.token_input)
 
-        self.btn_show_token = QPushButton("Show", parent=self)
-        self.btn_show_token.setObjectName("SecondaryBtn")
-        self.btn_show_token.setFixedWidth(60)
+        self.btn_show_token = QPushButton(parent=self)
+        self.btn_show_token.setObjectName("IconButton")
+        self.btn_show_token.setFixedSize(38, 38)
+        self.btn_show_token.setIcon(create_eye_icon(open_eye=True, color="#9c9ca4", size=16))
+        self.btn_show_token.setIconSize(QSize(18, 18))
+        self.btn_show_token.setToolTip("Show token")
         self.btn_show_token.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_show_token.clicked.connect(self._toggle_echo_mode)
         token_row.addWidget(self.btn_show_token)
@@ -191,15 +282,15 @@ class ModernGitHubAuthDialog(QDialog):
         layout.addLayout(step2_box)
 
         # Auto-create private repo checkbox
-        self.chk_create_repo = QCheckBox("Create private repository 'markup-notes' automatically", parent=self)
+        self.chk_create_repo = ModernCheckBox("Create private repository 'markup-notes' automatically", parent=self)
         self.chk_create_repo.setChecked(True)
-        self.chk_create_repo.setCursor(Qt.CursorShape.PointingHandCursor)
         layout.addWidget(self.chk_create_repo)
 
-        # Status feedback
+        # Status feedback with reserved minimum height so dialog layout never jumps or compresses
         self.status_lbl = QLabel("", parent=self)
         self.status_lbl.setObjectName("StatusLabel")
         self.status_lbl.setWordWrap(True)
+        self.status_lbl.setMinimumHeight(32)
         layout.addWidget(self.status_lbl)
 
         # Action Buttons
@@ -209,12 +300,14 @@ class ModernGitHubAuthDialog(QDialog):
 
         self.btn_cancel = QPushButton("Cancel", parent=self)
         self.btn_cancel.setObjectName("SecondaryBtn")
+        self.btn_cancel.setFixedHeight(36)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
 
-        self.btn_connect = QPushButton("Connect & Sync", parent=self)
+        self.btn_connect = QPushButton("Connect", parent=self)
         self.btn_connect.setObjectName("PrimaryBtn")
+        self.btn_connect.setFixedHeight(36)
         self.btn_connect.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_connect.clicked.connect(self._do_verify_and_connect)
         btn_layout.addWidget(self.btn_connect)
@@ -230,15 +323,18 @@ class ModernGitHubAuthDialog(QDialog):
         """Open browser to the official GitHub Personal Access Token creation page."""
         QDesktopServices.openUrl(QUrl(self.github_client.TOKEN_GENERATE_URL))
         self.status_lbl.setStyleSheet("color: #0a84ff;")
-        self.status_lbl.setText("Opened GitHub in browser. Scroll to bottom and click 'Generate token'.")
+        self.status_lbl.setText("Opened GitHub in browser. Scroll to the bottom and click 'Generate token'.")
+        self.adjustSize()
 
     def _toggle_echo_mode(self) -> None:
         if self.token_input.echoMode() == QLineEdit.EchoMode.Password:
             self.token_input.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.btn_show_token.setText("Hide")
+            self.btn_show_token.setIcon(create_eye_icon(open_eye=False, color="#0a84ff", size=16))
+            self.btn_show_token.setToolTip("Hide token")
         else:
             self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
-            self.btn_show_token.setText("Show")
+            self.btn_show_token.setIcon(create_eye_icon(open_eye=True, color="#9c9ca4", size=16))
+            self.btn_show_token.setToolTip("Show token")
 
     def _on_token_changed(self) -> None:
         self.status_lbl.setText("")
@@ -249,19 +345,25 @@ class ModernGitHubAuthDialog(QDialog):
         if not token:
             self.status_lbl.setStyleSheet("color: #ff453a;")
             self.status_lbl.setText("Please enter your GitHub token.")
+            self.adjustSize()
             return
 
         self.btn_connect.setEnabled(False)
         self.btn_connect.setText("Verifying...")
         self.status_lbl.setStyleSheet("color: #9c9ca4;")
         self.status_lbl.setText("Connecting to GitHub API...")
+        self.adjustSize()
 
         ok, user, msg = self.github_client.verify_token(token)
         if not ok or user is None:
             self.btn_connect.setEnabled(True)
-            self.btn_connect.setText("Connect & Sync")
+            self.btn_connect.setText("Connect")
             self.status_lbl.setStyleSheet("color: #ff453a;")
-            self.status_lbl.setText(f"Error: {msg}")
+            if "expired" in msg.lower() or "invalid" in msg.lower() or "401" in msg.lower():
+                self.status_lbl.setText("GitHub token is invalid or expired. Please generate a new token above.")
+            else:
+                self.status_lbl.setText(f"Error: {msg}")
+            self.adjustSize()
             return
 
         self.authenticated_token = token

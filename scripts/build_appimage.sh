@@ -79,6 +79,8 @@ echo "==> Compiling application with PyInstaller (stripped of unused Qt modules)
     --noconfirm \
     --clean \
     --add-data "$PROJECT_ROOT/assets:assets" \
+    --add-data "$PROJECT_ROOT/utils:utils" \
+    --hidden-import storage.credential_store \
     --hidden-import PyQt6.QtCore \
     --hidden-import PyQt6.QtGui \
     --hidden-import PyQt6.QtWidgets \
